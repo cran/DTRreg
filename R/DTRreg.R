@@ -82,6 +82,7 @@ DTRreg <- function(outcome, blip.mod, treat.mod, tf.mod, data=NULL, method = "ge
   }
   # make sure data is a data frame (can't be a matrix)
   data <- data.frame(data)
+  rownames(data) <- seq(1:nrow(data))
   obj$data <- data
   
   obj$blip.mod <- blip.mod
@@ -131,9 +132,9 @@ DTRreg <- function(outcome, blip.mod, treat.mod, tf.mod, data=NULL, method = "ge
         Miss <- Miss[keep]
         # build full history from all previous stages
         H.list <- unique(c(unlist(sapply(blip.mod[(j-1):1],all.vars)),unlist(sapply(tf.mod[(j-1):1],all.vars)),unlist(sapply(treat.mod[(j-1):1],all.vars))))
-        H <- as.matrix(data[,which(colnames(data) %in% H.list)])
+        H <- data.matrix(data[,which(colnames(data) %in% H.list)])
         H <- H[keep,]
-        pi[which(!apply(is.na(H),1,any))] <- fitted(glm(Miss~H))
+        pi[which(!apply(is.na(H),1,any))] <- fitted(glm(Miss~.,data=as.data.frame(H)))
         obj$ipcw[[j]] <- pi
       }
       keep <- keep[!(keep %in% drop)]
@@ -661,5 +662,103 @@ get_all_vars_DTR <- function(x,n) {
 		return(get_all_vars(x))
 	}
 }
+
+#' @export
+chooseM <- function(outcome, blip.mod, treat.mod, tf.mod, data=NULL, method = "gest", weight = "default", missing = "default", treat.mod.man = NULL, B1 = 500, B2 = 500)
+{
+	# fit initial DTRreg model to the data to get original estimates + phat
+	mod1 <- DTRreg(outcome,blip.mod, treat.mod, tf.mod, data, method, weight, missing, treat.mod.man, var.estim="bootstrap", M = 0, truncate = 0, B = 200)
+	blip.psi.1 <- mod1$psi[[1]]
+	p <- mod1$nonreg[2]
+	
+	# make sure the data are in a data frame
+	if (is.null(data)) {
+    data <- cbind(outcome,do.call("cbind",lapply(blip.mod,get_all_vars)),do.call("cbind",lapply(treat.mod,get_all_vars)),do.call("cbind",lapply(tf.mod,get_all_vars)))
+    data <- data[!duplicated(lapply(data,summary))]
+	}
+  	data <- data.frame(data)
+	
+	# deal with missing data here
+	
+	# initialize 
+	alpha <- 0.025
+	n <- nrow(data)
+	
+	while(alpha <= 0.5) # loop until alpha reaches 0.5, with break when the coverage reaches the nominal 95% rate
+	{
+		# reset coverage
+		coverage <- 0
+		
+		# reset matrix to save estimates
+    	est <- matrix(NA, ncol = B2 + 3, nrow = 1)
+    	for(j in 1:B1) # loop over B1 first stage bootstrap samples
+    	{
+     		# draw a n-out-of-n bootstrap sample
+      		index <- sample(1:n, n, replace = TRUE)
+      		boot1 <- as.data.frame(data[index,])
+      		
+      		# if prespecified probability of treatment with treat.mod.man, adjust
+      		treat.mod.manN <- NULL
+      		if(class(treat.mod.man)=="list")
+      		{
+      			treat.mod.manN <- treat.mod.man
+      			numT <- length(treat.mod.man)
+      			for(t in 1:numT) treat.mod.manN[[t]] <- treat.mod.man[[t]][index]
+      		}
+      
+      		# fit the model to b1-th bootstrap sample
+      		res1 <- try(DTRreg(outcome, blip.mod, treat.mod, tf.mod, treat.mod.man = treat.mod.manN, method, var.estim = "bootstrap", data = boot1))
+      		esb1 <- res1$psi[[1]][1] # only consider main effect of treatment
+      		est[1] <- esb1
+      
+      		# estimate m for each b1 bootstrap sample
+      		phat <- res1$nonreg[2]
+      		est[2] <- phat
+      
+      		# resampling size
+      		m <- n^((1 + alpha*(1-phat))/(1 + alpha)) 
+      		est[3] <- m
+      
+           	for(k in 1:B2) # loop over B2 second stage bootstrap samples
+      		{
+        		# resample with replacement 
+        		index <- sample(1:n, floor(m), replace = TRUE)
+        		boot2 <- boot1[index,]
+        		
+        		# if prespecified probability of treatment with treat.mod.man
+        		treat.mod.manM <- NULL
+      			if(class(treat.mod.man)=="list")
+      			{
+      				treat.mod.manM <- treat.mod.manN
+      				numT <- length(treat.mod.man)
+      				for(t in 1:numT) treat.mod.manM[[t]] <- treat.mod.manN[[t]][index]
+      			}
+      			
+        		# fit the model to bootstrap sample
+        		res2 <- try(DTRreg(outcome, blip.mod, treat.mod, tf.mod, treat.mod.man = treat.mod.manM, method, data = as.data.frame(boot2)))
+        		esb2 <- res2$psi[[1]][1]
+        
+        		# save the (b1,b2) bootstrap estimates in the (k+3) column
+        		est[k + 3] <- esb2
+      		}
+      		quan <- quantile(sqrt(m)*(est[4:(B2+3)]-esb1), probs = c(0.025,0.975))
+      		coverage <- coverage + ((esb1 - quan[2]/sqrt(m) <= blip.psi.1[1]) & (esb1 - quan[1]/sqrt(m) >= blip.psi.1[1]))
+    	}
+		coverage <- coverage/B1
+		# print coverage and alpha
+		cat("alpha=",alpha,", coverage = ", coverage, "\n")
+		if(coverage >= 0.95)
+    	{
+      		cat("Final value of alpha = ", alpha,"\n")
+      		m <- n^((1 + alpha*(1-p))/(1 + alpha)) 
+      		cat("Selected subsample size m = ", floor(m),"\n")
+      		break
+    	} else {
+       		alpha <- alpha + 0.025
+    	}    	
+	}
+	return(list(m=as.numeric(floor(m))))  
+}
+
 
 
