@@ -1,6 +1,6 @@
 # Doubly-robust dynamic treatment regimen estimation via dynamic weighted ordinary least squares (dWOLS), assuming linear blip functions and logistic regression for treatment model
 #' @export
-DTRreg <- function(outcome, blip.mod, treat.mod, tf.mod, data=NULL, method = "gest", weight = "default", var.estim="none", B = 200, M = 0, truncate = 0, verbose = "FALSE", interrupt = "FALSE", treat.range = NULL, missing = "default", interactive = FALSE, treat.mod.man = NULL, type = "DTR") {
+DTRreg <- function(outcome, blip.mod, treat.mod, tf.mod, data=NULL, method = "gest", weight = "default", var.estim="none", B = 200, M = 0, truncate = 0, verbose = FALSE, interrupt = FALSE, treat.range = NULL, missing = "default", interactive = FALSE, treat.mod.man = NULL, type = "DTR") {
   # if interactive mode chosen, build standardized input from user input
   if (interactive==TRUE & var.estim != "bs.quiet") {
     cat("DTR estimation interactive mode!\n")
@@ -78,7 +78,11 @@ DTRreg <- function(outcome, blip.mod, treat.mod, tf.mod, data=NULL, method = "ge
     data <- data[!duplicated(lapply(data,summary))]
     obj$outcome <- outcome
   } else {
+        if (var.estim == 'bs.quiet') {
+    obj$outcome <- outcome
+	} else {
     obj$outcome <- eval(substitute(outcome),envir=data)
+	}
   }
   # make sure data is a data frame (can't be a matrix)
   data <- data.frame(data)
@@ -410,8 +414,11 @@ DTRreg <- function(outcome, blip.mod, treat.mod, tf.mod, data=NULL, method = "ge
     # continue indicator
     cont <- "u"
     for (i in 1:B) {
-      data.boot <- data[sample(1:M, replace=TRUE),]
-      psi.boot[[i]] <- DTRreg(outcome, blip.mod, treat.mod, tf.mod, data.boot, method, var.estim="bs.quiet", verbose=verbose,treat.mod.man=treat.mod.man)$psi
+      b.sample <- sample(1:M, replace=TRUE)
+      data.boot <- data[b.sample,]
+      # set outcome vector manually to avoid dependency on input format
+      outcome.boot <- Y[b.sample]
+      psi.boot[[i]] <- DTRreg(outcome.boot, blip.mod, treat.mod, tf.mod, data.boot, method, var.estim="bs.quiet", verbose=verbose,treat.mod.man=treat.mod.man)$psi
       # if verbose, display ETA and give option to abort
       if (verbose == T & i >= 10) {
         # only display if projected > 30s, then only display every 30s

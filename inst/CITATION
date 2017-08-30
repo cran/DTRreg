@@ -1,0 +1,19 @@
+bibentry(bibtype = "Article",
+  title        = "Dynamic Treatment Regimen Estimation via Regression-Based Techniques: Introducing {R} Package {DTRreg}",
+  author       = c(person(given = c("Michael", "P."),
+                          family = "Wallace",
+                          email = "michael.wallace@uwaterloo.ca"),
+                   person(given = c("Erica", "E.", "M."),
+                          family = "Moodie"),
+                   person(given = c("David", "A."),
+                          family = "Stephens")),
+  journal      = "Journal of Statistical Software",
+  year         = "2017",
+  volume       = "80",
+  number       = "2",
+  pages        = "1--20",
+  doi          = "10.18637/jss.v080.i02",
+
+  header       = "To cite DTRreg in publications use:"
+)
+

@@ -10,8 +10,8 @@ Dynamic treatment regimen estimation and inference via G-estimation and dynamic 
 \usage{
 DTRreg(outcome, blip.mod, treat.mod, tf.mod, data = NULL,
         method = "gest", weight = "default", var.estim = "none",
-        B = 200, M = 0, truncate = 0, verbose = "FALSE",
-        interrupt = "FALSE", treat.range = NULL, missing = "default",
+        B = 200, M = 0, truncate = 0, verbose = FALSE,
+        interrupt = FALSE, treat.range = NULL, missing = "default",
         interactive = FALSE, treat.mod.man = NULL, type = "DTR")
 }
 %- maybe also 'usage' for other objects documented here.
@@ -59,7 +59,9 @@ Chakraborty, B., Moodie, E. E. M. (2013) \emph{Statistical Methods for Dynamic T
 
 Robins, J. M. (2004) \emph{Optimal structural nested models for optimal sequential decisions}. In Proceedings of the Second Seattle Symposium on Biostatistics, D. Y. Lin and P. J. Heagerty (eds), 189--326. New York: Springer.
 
-Wallace, M. P., Moodie, E. M. (2015) Doubly-Robust Dynamic Treatment Regimen Estimation Via Weighted Least Squares. \emph{Biometrics} \bold{71}(3), 636--644 (doi:10.1111/biom.12306.)
+Wallace, M. P., Moodie, E. E. M. (2015) Doubly-Robust Dynamic Treatment Regimen Estimation Via Weighted Least Squares. \emph{Biometrics} \bold{71}(3), 636--644 (doi:10.1111/biom.12306).
+
+Wallace, M. P., Moodie, E. E. M., Stephens, D. A. (2017) Dynamic Treatment Regimen Estimation via Regression-Based Techniques: Introducing {R} Package {DTRreg}. \emph{Journal of Statistical Software} \bold{80}(2), 1--20 (doi:10.18637/jss.v080.i02).
 }
 \author{Michael Wallace}
 
