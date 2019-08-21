@@ -63,4 +63,8 @@ predict(mod1, newdata = dat)
 ##################
 }
 
-\keyword{dynamic treatment regimens,adaptive treatment strategies,personalized medicine,g-estimation,dynamic weighted ordinary least squares}
+\concept{dynamic treatment regimens}
+\concept{adaptive treatment strategies}
+\concept{personalized medicine}
+\concept{g-estimation}
+\concept{dynamic weighted ordinary least squares}
