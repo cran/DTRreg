@@ -144,9 +144,9 @@ DTRreg <- function(outcome, blip.mod, treat.mod, tf.mod, data=NULL, method = "ge
 
 	if (missing == 'ipcw') {
 	keep <- c(1:N)
-      keep <- keep[!(keep %in% new.drop)]				
+      keep <- keep[!(keep %in% new.drop)]
 	} else {
-      keep <- keep[!(keep %in% drop)]		
+      keep <- keep[!(keep %in% drop)]
 	}
 
       # only work with those we want to kep at this stage
@@ -477,7 +477,7 @@ DTRreg <- function(outcome, blip.mod, treat.mod, tf.mod, data=NULL, method = "ge
 
 # printing
 #' @export
-print.DTRreg <- function(x,...) {
+print.DTRreg <- print.DWSurv <- function(x,...) {
 	K <- x$K
 	# longest blip variable name lengths, if applicable, get length of blip excluding treatment terms
 	max.length <- 0
@@ -563,7 +563,7 @@ print.DTRreg <- function(x,...) {
 	}
 }
 #' @export
-summary.DTRreg <- function(object,...) {
+summary.DTRreg <- summary.DWSurv <- function(object,...) {
 	print.DTRreg(object)
 }
 
@@ -601,7 +601,7 @@ predict.DTRreg <- function(object, newdata, treat.range=NULL, ...) {
 	return(obj)
 }
 #' @export
-coef.DTRreg <- function(object,...) {
+coef.DTRreg <- coef.DWSurv  <- function(object,...) {
 	x <- object
 	K <- x$K
 	obj <- x$psi
@@ -613,7 +613,7 @@ coef.DTRreg <- function(object,...) {
 }
 # confidence interval
 #' @export
-confint.DTRreg <- function(object, parm = NULL, level = 0.95, type = "se", ...) {
+confint.DTRreg  <- confint.DWSurv <- function(object, parm = NULL, level = 0.95, type = "se", ...) {
   x <- object
   K <- x$K
   obj <- x$psi
@@ -651,10 +651,10 @@ confint.DTRreg <- function(object, parm = NULL, level = 0.95, type = "se", ...) 
 
 # diagnostics
 #' @export
-plot.DTRreg <- function(x, method = "DTRreg", ...) {
+plot.DTRreg <- plot.DWSurv <- function(x, ...) {
   # original Y is in x$obs.Y
   # fitted Y (one for each stage) is in x$fitted
-  if(method == "DTRreg"){
+  if(class(x) == "DTRreg"){
     cat("Y residuals (for treatment-free and blip models):\n")
     for (j in 1:x$K) {
       advance <- readline("Hit <Return> to see next plot:")
@@ -677,7 +677,7 @@ plot.DTRreg <- function(x, method = "DTRreg", ...) {
       cat("Stage",j,"\n")
       plot(x$treat.mod.fitted[[j]],sub.caption=paste("Stage",j,"treatment"))
     }
-  }else if(method == "DWSurv"){
+  }else{
     cat("Y residuals (for treatment-free and blip models):\n")
     for (j in 1:x$K) {
       advance <- readline("Hit <Return> to see next plot:")
@@ -838,6 +838,8 @@ DWSurv <- function(time, blip.mod, treat.mod, tf.mod, cens.mod, data = NULL, wei
   K <- length(blip.mod)
   obj$K <- K
   obj$optimization <- optimization
+  # defined counters if bootstrap normal or empirical
+  if(var.estim == "bootstrap" & boot.opt != "standard") obj$rej.boot <- vector(mode = "list", length = K)
   # checking input validity (continued)
   for(j in 1:K){
     if(class(treat.mod[[j]]) != "formula") stop(paste("The stage ", j, " treatment model must be supplied as a formula with the treatment variable on the left hand side.", sep = ""))
@@ -845,7 +847,7 @@ DWSurv <- function(time, blip.mod, treat.mod, tf.mod, cens.mod, data = NULL, wei
     if(class(time[[j]]) != "formula" | length(all.vars(time)) > 1) stop("The stage ", j, " survival time must be supplied as a formula with nothing on the left hand side and the survival time variable on the right hand side.")
   }
   #time <- list(time); treat.mod <- list(treat.mod); blip.mod <- list(blip.mod); tf.mod <- list(tf.mod); cens.mod <- list(cens.mod)
-  
+
   # if no data set, create one from the models
   if (is.null(data)) {
     data <- cbind(do.call("cbind",lapply(time,get_all_vars)), do.call("cbind",lapply(blip.mod,get_all_vars)),do.call("cbind",lapply(treat.mod,get_all_vars)),do.call("cbind",lapply(tf.mod,get_all_vars)), do.call("cbind",lapply(cens.mod,get_all_vars)))
@@ -857,7 +859,7 @@ DWSurv <- function(time, blip.mod, treat.mod, tf.mod, cens.mod, data = NULL, wei
     for(j in 1:K){
       obj$time[[j]] <- data[,which(colnames(data) == all.vars(time[[j]]))]
     }
-    obj$status <- data[,which(colnames(data) == all.vars(cens.mod[[1]])[1])] 
+    obj$status <- data[,which(colnames(data) == all.vars(cens.mod[[1]])[1])]
   }
   # make sure data is a data frame (can't be a matrix)
   data <- data.frame(data)
@@ -865,7 +867,7 @@ DWSurv <- function(time, blip.mod, treat.mod, tf.mod, cens.mod, data = NULL, wei
   obj$data <- data
   Y <- obj$time
   delta <- obj$status
-  
+
   if (any(is.na(delta))) { # missing survival times will be normal if patients don't reach stage
     stop("Missing values in status are not allowed.")
   }
@@ -897,7 +899,7 @@ DWSurv <- function(time, blip.mod, treat.mod, tf.mod, cens.mod, data = NULL, wei
       Y[[j]][which(data$id %in% drop)] <- 0
     }
   }
-  
+
   # keep track of id removed
   obj$drop <- drop
   # keep track of who enter stages
@@ -914,27 +916,27 @@ DWSurv <- function(time, blip.mod, treat.mod, tf.mod, cens.mod, data = NULL, wei
     Yj <- Ycumul[eta[[j]] == 1]
     dataetaj <- data[eta[[j]] == 1, ]
     deltaj <- delta.store[[j]] <- delta[eta[[j]] == 1]
-    
+
     # get data: Hpsi = blip, Hbeta = treatment-free, Halpha = treatment, Hlambda = censoring
     A <- A.store[[j]] <- as.numeric(model.response(model.frame(treat.mod[[j]], dataetaj, na.action = 'na.pass')))
     Hpsi <- model.matrix(blip.mod[[j]], model.frame(blip.mod[[j]], dataetaj, na.action = 'na.pass'))
     Hbeta <- model.matrix(tf.mod[[j]], model.frame(tf.mod[[j]], dataetaj, na.action = 'na.pass'))
     Halpha <- model.matrix(treat.mod[[j]], model.frame(treat.mod[[j]], dataetaj, na.action = 'na.pass'))
     if(is.null(cens.mod[[j]]) != TRUE) Hlambda <- model.matrix(cens.mod[[j]], model.frame(cens.mod[[j]], dataetaj, na.action = 'na.pass'))
-    
+
     # list of censoring and treatment variables
     treat.var <- all.vars(treat.mod[[j]])[1]
-    
+
     # store blip variable names for output
     obj$blip.list[[j]] <- colnames(Hpsi)
-    
+
     # force matrices in case intercept-only models
     Hpsi <- Hpsi.store[[j]] <-  as.matrix(Hpsi)
     Hbeta <- as.matrix(Hbeta)
     Halpha <- Halpha.store[[j]] <- as.matrix(Halpha)
     if(is.null(cens.mod[[j]]) != TRUE) Hlambda <- Hlambda.store[[j]] <- as.matrix(Hlambda)
     obj$n[[j]] <- nrow(dataetaj)
-    
+
     # check if treatments are binary, if not, and dWOLS selected, abort
     A.bin <- as.numeric(length(unique(A)) <= 2)
     if (A.bin == 0) {
@@ -950,13 +952,13 @@ DWSurv <- function(time, blip.mod, treat.mod, tf.mod, cens.mod, data = NULL, wei
     }
     # for compatibility with other functions
     obj$cts[[j]] <- "bin"
-    
+
     # treatment model: binary logistic
     alpha <- glm(A ~ -1 + Halpha, family = binomial(link = "logit"))
     obj$treat.mod.fitted[[j]] <- alpha
     Ahat <- Ahat.store[[j]] <- fitted(alpha)
     obj$obs.treat[[j]] <- A
-    
+
     # censoring model: binary logistic
     if(sum(deltaj) != length(deltaj) & is.null(cens.mod[[j]]) != TRUE){
       lambda <- glm(deltaj ~ -1 + Hlambda, family = binomial(link = "logit"))
@@ -969,7 +971,7 @@ DWSurv <- function(time, blip.mod, treat.mod, tf.mod, cens.mod, data = NULL, wei
     }else{
       Dhat <- Dhat.store[[j]] <- deltaj
     }
-    
+
     # estimation step
     # weights
     if (is.function(weight) == FALSE) {
@@ -987,8 +989,8 @@ DWSurv <- function(time, blip.mod, treat.mod, tf.mod, cens.mod, data = NULL, wei
     est <- solve(t(cbind(Hbetaj, Aj * Hpsij)) %*% cbind(wj * Hbetaj, wj * Aj * Hpsij)) %*% t(cbind(Hbetaj, Aj * Hpsij)) %*% (wj * logY)
     psi <- est[(dim(Hbeta)[2] + 1):(dim(Hbeta)[2] + dim(Hpsi)[2])]
     beta <- est[1:dim(Hbeta)[2]]
-    
-    # if parametric bootstrap requested
+
+    # if parametric bootstrap requested, done within each stage
     if(var.estim == "bootstrap" & boot.opt != "standard"){
       psi.boot <- matrix(NA, nrow = B, ncol = length(psi))
       residuals <- logY - Hbetaj %*% beta - Aj * Hpsij %*% psi
@@ -996,21 +998,49 @@ DWSurv <- function(time, blip.mod, treat.mod, tf.mod, cens.mod, data = NULL, wei
       mean.res <- mean(residuals)
       sd.res <- sd(residuals)
       boot.data <- dataetaj
+      obj$rej.boot[[j]] <- 0
       for (k in 1:B) {
-        boot.data[,which(colnames(boot.data) == all.vars(cens.mod[[1]])[1])] <- rbinom(obj$n[[j]], 1, Dhat.store[[j]])
         if(boot.opt == "empirical"){
+          # resample censoring indicator from glm model
+          boot.data[,which(colnames(boot.data) == all.vars(cens.mod[[1]])[1])] <- rbinom(obj$n[[j]], 1, Dhat.store[[j]])
+          # for rows with delta=1, resample from empirical distribution of residuals
           bins <- with(reshist, sample(length(mids), sum(boot.data[,which(colnames(boot.data) == all.vars(cens.mod[[1]])[1])]), prob = density, replace = TRUE))
           newres <- runif(obj$n[[j]], reshist$breaks[bins], reshist$breaks[bins + 1])
+          boot.data[, which(colnames(boot.data) == all.vars(time[[j]]))] <- exp(Hbeta %*% beta + A*Hpsi %*% psi + newres)
+          # try to fit model
+          mod <- try(DWSurv(time = list(obj$time.mod[[j]]), blip.mod = list(obj$blip.mod[[j]]), treat.mod = list(obj$treat.mod[[j]]), tf.mod = list(obj$tf.mod[[j]]), cens.mod = list(obj$cens.mod[[j]]), boot.data, var.estim="none", quiet = TRUE), silent = TRUE)
+          while(class(mod) != "DWSurv"){
+            # record the number of rejected samples in stage j
+            obj$rej.boot[[j]] <- obj$rej.boot[[j]] + 1
+            boot.data[,which(colnames(boot.data) == all.vars(cens.mod[[1]])[1])] <- rbinom(obj$n[[j]], 1, Dhat.store[[j]])
+            bins <- with(reshist, sample(length(mids), sum(boot.data[,which(colnames(boot.data) == all.vars(cens.mod[[1]])[1])]), prob = density, replace = TRUE))
+            newres <- runif(obj$n[[j]], reshist$breaks[bins], reshist$breaks[bins + 1])
+            boot.data[, which(colnames(boot.data) == all.vars(time[[j]]))] <- exp(Hbeta %*% beta + A*Hpsi %*% psi + newres)
+            mod <- try(DWSurv(time = list(obj$time.mod[[j]]), blip.mod = list(obj$blip.mod[[j]]), treat.mod = list(obj$treat.mod[[j]]), tf.mod = list(obj$tf.mod[[j]]), cens.mod = list(obj$cens.mod[[j]]), boot.data, var.estim="none", quiet = TRUE), silent = TRUE)
+          }
+          psi.boot[k,] <- mod$psi[[1]]
         }else if(boot.opt == "normal"){
+          # resample censoring indicator from glm model
+          boot.data[,which(colnames(boot.data) == all.vars(cens.mod[[1]])[1])] <- rbinom(obj$n[[j]], 1, Dhat.store[[j]])
+          # for rows with delta=1, resample residuals from normal distribution
           newres <- rnorm(obj$n[[j]], mean = mean.res, sd = sd.res)
+          boot.data[, which(colnames(boot.data) == all.vars(time[[j]]))] <- exp(Hbeta %*% beta + A*Hpsi %*% psi + newres)
+          # try to fit model
+          mod <- try(DWSurv(time = list(obj$time.mod[[j]]), blip.mod = list(obj$blip.mod[[j]]), treat.mod = list(obj$treat.mod[[j]]), tf.mod = list(obj$tf.mod[[j]]), cens.mod = list(obj$cens.mod[[j]]), boot.data, var.estim="none", quiet = TRUE), silent = TRUE)
+          while(class(mod) != "DWSurv"){
+            obj$rej.boot[[j]] <- obj$rej.boot[[j]] + 1
+            boot.data[,which(colnames(boot.data) == all.vars(cens.mod[[1]])[1])] <- rbinom(obj$n[[j]], 1, Dhat.store[[j]])
+            newres <- rnorm(obj$n[[j]], mean = mean.res, sd = sd.res)
+            boot.data[, which(colnames(boot.data) == all.vars(time[[j]]))] <- exp(Hbeta %*% beta + A*Hpsi %*% psi + newres)
+            mod <- try(DWSurv(time = list(obj$time.mod[[j]]), blip.mod = list(obj$blip.mod[[j]]), treat.mod = list(obj$treat.mod[[j]]), tf.mod = list(obj$tf.mod[[j]]), cens.mod = list(obj$cens.mod[[j]]), boot.data, var.estim="none", quiet = TRUE), silent = TRUE)
+          }
+          psi.boot[k,] <- mod$psi[[1]]
         }
-        boot.data[, which(colnames(boot.data) == all.vars(time[[j]]))] <- exp(Hbeta %*% beta + A*Hpsi %*% psi + newres)
-        psi.boot[k,] <- DWSurv(time = list(obj$time.mod[[j]]), blip.mod = list(obj$blip.mod[[j]]), treat.mod = list(obj$treat.mod[[j]]), tf.mod = list(obj$tf.mod[[j]]), cens.mod = list(obj$cens.mod[[j]]), boot.data, var.estim="none", quiet = TRUE)$psi[[1]]
       }
       obj$covmat[[j]] <- var(psi.boot)
       obj$psi.boot[[j]] <- psi.boot
     }
-    
+
     # use estimates to identify optimal treatments
     # depending on optimization goal
     if (optimization == "max") {
@@ -1032,7 +1062,7 @@ DWSurv <- function(time, blip.mod, treat.mod, tf.mod, cens.mod, data = NULL, wei
     Yj <- exp(log(Yj) + obj$log.regret[[j]])
     old.Ycumul <- Ycumul
     Ycumul[eta[[j]] == 1] <- Yj
-    
+
     # Asymptotic variance estimator done stage-by-stage
     if (var.estim == "asymptotic" & is.function(weight) == FALSE) {
       logY <- as.matrix(log(old.Ycumul[eta[[j]] == 1]))
@@ -1117,25 +1147,44 @@ DWSurv <- function(time, blip.mod, treat.mod, tf.mod, cens.mod, data = NULL, wei
       }
     }
   }
-  
+
   # optimal outcome relevant only for observed events
   obj$Y.opt <- Ycumul
-  
+
   # standard errors
   # standard bootstrap
   if (var.estim == "bootstrap" & boot.opt == "standard") {
     psi.boot <- list()
     M <- nrow(data)
+    # keep track of rejected samples
+    obj$rej.boot <- 0
     for (i in 1:B) {
+      # resample rows of data with replacement
       data.boot <- data[sample(1:M, replace=TRUE),]
-      psi.boot[[i]] <- DWSurv(time = obj$time.mod, blip.mod = obj$blip.mod, treat.mod = obj$treat.mod, tf.mod = obj$tf.mod, cens.mod = obj$cens.mod, data.boot, var.estim="none", quiet = TRUE)$psi
+      mod <- try(DWSurv(time = obj$time.mod, blip.mod = obj$blip.mod, treat.mod = obj$treat.mod, tf.mod = obj$tf.mod, cens.mod = obj$cens.mod, data.boot, var.estim="none", quiet = TRUE), silent = TRUE)
+      # resample as long as the model fails with the bootstrap sample
+      while(class(mod) != "DWSurv"){
+        obj$rej.boot <- obj$rej.boot + 1
+        data.boot <- data[sample(1:M, replace=TRUE),]
+        mod <- try(DWSurv(time = obj$time.mod, blip.mod = obj$blip.mod, treat.mod = obj$treat.mod, tf.mod = obj$tf.mod, cens.mod = obj$cens.mod, data.boot, var.estim="none", quiet = TRUE), silent = TRUE)
+      }
+      psi.boot[[i]] <- mod$psi
     }
     psi.boot <- do.call(function(...) mapply(rbind, ..., SIMPLIFY=FALSE), psi.boot)
     covmat <- lapply(psi.boot, var)
     obj$covmat <- covmat
     obj$psi.boot <- psi.boot
+    # print number of rejected bootstrap resamples
+    cat("Warning:", obj$rej.boot,"bootstrap resamples were rejected.\n")
   }
-  
+
+  # if bootstrap empirical or normal, print the number of rejected samples by stage
+  if(var.estim == "bootstrap" & boot.opt != "standard"){
+    for(j in 1:K){
+      cat("Warning:", obj$rej.boot[[j]],"bootstrap resamples were rejected in stage", j, ".\n")
+    }
+  }
+
   # if variance requested, calculate non-regularity
   if (var.estim != "none" & A.bin == 1) {
     for (j in K:1) {
@@ -1153,6 +1202,6 @@ DWSurv <- function(time, blip.mod, treat.mod, tf.mod, cens.mod, data = NULL, wei
     }
   }
   # return
-  class(obj) <- "DTRreg"
+  class(obj) <- "DWSurv"
   obj
 }

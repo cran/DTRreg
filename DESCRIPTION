@@ -2,8 +2,8 @@ Package: DTRreg
 Type: Package
 Title: DTR Estimation and Inference via G-Estimation, Dynamic WOLS,
         Q-Learning, and Dynamic Weighted Survival Modeling (DWSurv)
-Version: 1.4
-Date: 2019-08-20
+Version: 1.5
+Date: 2019-10-03
 Author: Michael Wallace, Erica E M Moodie, David A Stephens and Gabrielle Simoneau
 Maintainer: Michael Wallace <michael.wallace@uwaterloo.ca>
 Description: Dynamic treatment regime estimation and inference via G-estimation,
@@ -15,8 +15,7 @@ License: GPL-2
 Imports: graphics, stats, utils
 Encoding: UTF-8
 LazyData: true
-RoxygenNote: 6.0.1
 NeedsCompilation: no
-Packaged: 2019-08-21 15:54:22 UTC; procyon
+Packaged: 2019-10-03 14:56:03 UTC; Gabrielle
 Repository: CRAN
-Date/Publication: 2019-08-21 21:50:16 UTC
+Date/Publication: 2019-10-17 17:30:02 UTC
