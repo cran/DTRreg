@@ -1,9 +1,10 @@
-38469ecc4b139aecee0a6cd4b142fcb4 *DESCRIPTION
-f20dfc5ea1947ef805999350facf2cb3 *NAMESPACE
-5c24ce16aa20f22a183870cda336112f *R/DTRreg.R
+ddcbaf0b4e184fe977a49cbe3c329bfa *DESCRIPTION
+783825b490d5371883271eea38f24737 *NAMESPACE
+fea88927ab4c9f4c6e4420911c470cea *R/DTRreg.R
 0d68edd8f003f1719b12529ad45f0299 *man/DTRreg.Rd
-37de5bed6d512d65d91f3a8bc4e80cce *man/DWSurv.Rd
+b0a5b83040e214faede46ed031c54359 *man/DWSurv.Rd
 0756aa34cab86206142b08e89d0eea6b *man/chooseM.Rd
-32c33ba73d630a63ac7d128df79a277e *man/confint.DTRreg.Rd
-acaaf9f31c60ddc18b8fc0b012f10a95 *man/plot.DTRreg.Rd
+74cb8d825ec1804458e7fe92d8b6d153 *man/confint.DTRreg.Rd
+21f3d019defd78372f3c103abb3edfe0 *man/gdwols.Rd
+22ae70d990374ef1b9ff80532c5ae6cd *man/plot.DTRreg.Rd
 13a913527d17c838b33f02e3ebc1c8db *man/predict.DTRreg.Rd

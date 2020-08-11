@@ -16,7 +16,7 @@ DWSurv(time, blip.mod, treat.mod, tf.mod, cens.mod, data = NULL, weight = "defau
   \item{blip.mod}{A list of formula objects specifying covariates of a (linear) blip function for each stage in order. No dependent variable should be specified.}
   \item{treat.mod}{A list of formula objects specifying the treatment model for each stage in order. The treatment variable should be binary and included as the dependent variable. Logistic regression models are used.}
   \item{tf.mod}{A list of formula objects specifying covariates of a (linear) treatment-free model for each stage in order. No dependent variable should be specified.}
-  \item{cens.mod}{A list of formula objects specifying the censoring model for each stage in order. The censoring indicator should be included as the dependent variable and should be the same across stages. In the absence of censoring, one still needs to specify a censoring indicator variable across stages.}
+  \item{cens.mod}{A list of formula objects specifying the censoring model for each stage in order. The event indicator, which takes value 1 if an event was observed and 0 otherwise, should be included as the dependent variable and should be the same across stages. In the absence of censoring, one still needs to specify an event indicator with 1s on the right-hand side of the formula and leave the left-hand side empty (see example below).}
   \item{data}{A data frame containing all necessary covariates contained in the above models.}
   \item{weight}{A user-supplied function for the weights to be used in DWSurv. The function must have the four following arguments: treatment received A, probability of receiving treatment A=1, status, probability of being observed status = 1. Default is the inverse probability of censoring weights combined with |A - E[A|...]|.}
   \item{var.estim}{Covariance matrix estimation method, either "asymptotic", "bootstrap" or "none" (default).}
@@ -47,7 +47,9 @@ Note that as is conventional, it is assumed a larger survival time is preferred 
 The functions coef and confint may be used with such model objects.  The first has specific help files for their implementation, while confint is used in the same way as the standard confint command, with an additional \code{type} options which can be set to "percentile" when bootstrap is used to derive confidence intervals. The parm option is not available.
 }
 \references{
-Simoneau, G., Moodie, E. E. M., Nijjar, J. S., Platt, R. W. (2018) Estimating Optimal Dynamic Treatment with Survival Outcomes. \emph{JASA}, under review.
+Simoneau, G., Moodie, E. E. M., Wallace, M.P., Platt, R. W. (2020) Optimal Dynamic Treatment Regimes with Survival Endpoints: Introducing DWSurv in the R package DTRreg. \emph{Journal of Statistical Computation and Simulation (in press)}. 
+
+Simoneau, G., Moodie, E. E. M., Nijjar, J. S., Platt, R. W. (2019) Estimating Optimal Dynamic Treatment with Survival Outcomes. \emph{Journal of the American Statistical Association}, pp.1-9 (doi:10.1080/01621459.2019.1629939).
 
 Wallace, M. P., Moodie, E. E. M., Stephens, D. A. (2017) Dynamic Treatment Regimen Estimation via Regression-Based Techniques: Introducing {R} Package {DTRreg}. \emph{Journal of Statistical Software} \bold{80}(2), 1--20 (doi:10.18637/jss.v080.i02).
 }
@@ -55,7 +57,7 @@ Wallace, M. P., Moodie, E. E. M., Stephens, D. A. (2017) Dynamic Treatment Regim
 
 \examples{
 ##################
-# example single run of a 2-stage DWSurv analysis
+#### example single run of a 2-stage DWSurv analysis
 set.seed(1)
 # expit function
 expit <- function(x) {1 / (1 + exp(-x))}
@@ -77,22 +79,19 @@ delta <- rbinom(n, size = 1, prob = expit(2*X1 - 0.4))
 eta2 <- rbinom(n, 1, prob = 0.8)
 delta2 <- delta[eta2 == 1]
 # survival time
-logY2 <- logT2 <- theta2[1] + theta2[2]*X2[eta2 == 1]
-  + theta2[3]*X23[eta2 == 1] + theta2[4]*A2[eta2 == 1]
-  + theta2[5]*A2[eta2 == 1]*X2[eta2 == 1]
+logY2 <- logT2 <- theta2[1] + theta2[2]*X2[eta2 == 1] + theta2[3]*X23[eta2 == 1] 
+  + theta2[4]*A2[eta2 == 1] + theta2[5]*A2[eta2 == 1]*X2[eta2 == 1] 
   + theta2[6]*X1[eta2 == 1] + rnorm(sum(eta2), sd = 0.3)
-trueA2opt <- ifelse(theta2[4]*A2[eta2 == 1]
+trueA2opt <- ifelse(theta2[4]*A2[eta2 == 1] 
   + theta2[5]*A2[eta2 == 1]*X2[eta2 == 1] > 0, 1, 0)
-logT2opt <- logT2
-  + (trueA2opt - A2[eta2 == 1])*(theta2[4]*A2[eta2 == 1]
+logT2opt <- logT2 + (trueA2opt - A2[eta2 == 1])*(theta2[4]*A2[eta2 == 1] 
   + theta2[5]*A2[eta2 == 1]*X2[eta2 == 1])
-logT <- theta1[1] + theta1[2]*X1 + theta1[3]*X14
-  + theta1[4]*A1 + theta1[5]*A1*X1 + rnorm(n, sd = 0.3)
+logT <- theta1[1] + theta1[2]*X1 + theta1[3]*X14 + theta1[4]*A1 
+  + theta1[5]*A1*X1 + rnorm(n, sd = 0.3)
 T1 <- exp(logT[eta2 == 1 & delta == 1]) - exp(logT2opt[delta2 == 1])
 logT[eta2 == 1 & delta == 1] <- log(T1 + exp(logT2[delta2 == 1]))
 # censoring time
-C <- (- log(runif(n - sum(delta), 0, 1))/(lambda
-  * exp(beta * X1[delta == 0])))^(1/p)
+C <- (- log(runif(n - sum(delta), 0, 1))/(lambda * exp(beta * X1[delta == 0])))^(1/p)
 eta2d0 <- eta2[delta == 0]
 C1 <- rep(NA, length(C))
 C2 <- rep(NA, length(C))
@@ -123,6 +122,28 @@ mod <- DWSurv(time = list(~Y1, ~Y2), blip.mod = list(~X1, ~X2),
   treat.mod = list(A1~X1, A2~X2), tf.mod = list(~X1 + X14, ~X2 + X23 + X1), 
   cens.mod = list(delta~X1, delta~X1), var.estim = "asymptotic", data = mydata)
 mod
+
+#### example in the absence of censoring
+# create an event indicator
+delta <- rep(1,n)
+delta2 <- delta[eta2 == 1]
+T1 <- exp(logT[eta2 == 1 & delta == 1]) - exp(logT2opt[delta2 == 1])
+logT[eta2 == 1 & delta == 1] <- log(T1 + exp(logT2[delta2 == 1]))
+# observed survival time
+Y2 <- rep(NA, n)
+Y1 <- rep(NA, n)
+Y1[delta == 1 & eta2 == 1] <- T1
+Y1[delta == 1 & eta2 == 0] <- exp(logT[delta == 1 & eta2 == 0])
+Y2[delta == 1 & eta2 == 0] <- 0
+Y2[delta == 1 & eta2 == 1] <- exp(logT2[delta2 == 1])
+logY <- log(Y1 + Y2)
+logY2 <- log(Y2[eta2 == 1])
+# data and run DWSurv
+mydata <- data.frame(X1,X14,A1,X2,X23,A2,delta,Y1,Y2)
+mod_nocensoring <- DWSurv(time = list(~Y1, ~Y2), blip.mod = list(~X1, ~X2), 
+  treat.mod = list(A1~X1, A2~X2), tf.mod = list(~X1 + X14, ~X2 + X23 + X1), 
+  cens.mod = list(~delta, ~delta), var.estim = "asymptotic", data = mydata)
+mod_nocensoring
 ##################
 }
 
