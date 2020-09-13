@@ -18,14 +18,11 @@ Confidence intervals for dWOLS or DWSurv parameters, with the possibility of der
   \item{level}{the confidence level required.}
   \item{\dots}{Space for additional arguments (not currently used by DTRreg).}
 }
-\details{
-BLABLA%%  ~~ If necessary, more details than the description above ~~
-}
 \value{
 A list with columns giving lower and upper confidence limits for each parameter. These will be labelled as (1-level)/2 and 1 - (1-level)/2 in % (by default 2.5% and 97.5%).
 }
 \references{
-MYPAPER%% ~put references to the literature/web site here ~
+Simoneau G, Moodie EE, Wallace MP, Platt RW. Optimal dynamic treatment regimes with survival endpoints: introducing DWSurv in the R package DTRreg. Journal of Statistical Computation and Simulation. 2020 Jul 16:1-8.%% ~put references to the literature/web site here ~
 }
 \author{
 Gabrielle Simoneau%%  ~~who you are~~
