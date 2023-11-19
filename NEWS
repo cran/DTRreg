@@ -1,0 +1,5 @@
+*** version 2.0
+
+This version is a complete redevelopment of the original implementation to
+improve consistency and expand functionality across methods. It is not backwards
+compatible with prior versions.
