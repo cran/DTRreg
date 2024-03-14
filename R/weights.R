@@ -52,6 +52,8 @@
 #'   dependent.vars: A list of dependent variables;
 #'   censoring.modeled: A logical. If TRUE, element `$models` must include
 #'     censoring models
+#'   manual.censor.weight: A logical. If TRUE, censoring weights were provided
+#'     by the user through treat.wgt.man.
 #' @param quiet A logical. If TRUE messaging is suppressed.
 #'  
 #' @return A list object containing `$last.stage`, an integer vector of length
@@ -65,6 +67,8 @@
 .completeCaseProbability <- function(obj, quiet, isSurvival) {
   rqrd_elements <- c("K", "models", "data", "censoring.modeled",
                      "dependent.vars")
+  if (isSurvival) rqrd_elements <- c(rqrd_elements, "manual.censor.weight")
+  
   stopifnot(
     "`obj` does not contain the required information" = 
       is.list(obj) && all(rqrd_elements %in% names(obj))
@@ -85,9 +89,11 @@
   # stage under consideration
   still_in <- rep(TRUE, n_cases)
   
-  # if censoring is not modeled, we need to remove all data for cases with
-  # missing data
-  if (!obj$censoring.modeled) {
+  # if complete cases or censoring is not modeled, we need to remove all data 
+  # for cases with missing data. Do not want to require complete data when 
+  # censoring is provided through the manual treatments
+  if ({!obj$censoring.modeled && !isSurvival} ||
+      {!obj$censoring.modeled && isSurvival && !obj$manual.censor.weight}) {
     still_in <- complete.cases(obj$data)
   }
 
@@ -130,7 +136,7 @@
 
     cen_fit <- .processCensoring(obj$models[[k]]$cens, 
                                  delta = delta, 
-                                 data = obj$data[still_in, ], 
+                                 data = obj$data[still_in, , drop = FALSE], 
                                  censoring.modeled = obj$censoring.modeled, 
                                  dp = k,
                                  quiet = quiet)

@@ -33,11 +33,11 @@
   if (!is.factor(A))  A <- as.factor(A)
   A <- {unclass(A) - 1L} |> as.integer()
   attributes(A) <- NULL
-
+  
   cts_obj <- Binary$new(tf.model = models$tf, 
                         blip.model = models$blip, 
                         tx.var = tx.var)
-  
+
   data[[tx.var]] <- A
   fit <- tryCatch(stats::glm(models$treat, data, family = "binomial"),
                   error = function(e) {

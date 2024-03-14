@@ -350,7 +350,7 @@ plot.DTRreg <- function(x, ...) {
     points(stats::lowess(fitK, obsK - fitK), type = "l", col = 2L, lwd = 2L)
     
     blip <- x$setup$models[[j]]$blip
-    blip_mm <- stats::model.matrix(blip, x$training_data$data[cases, ])
+    blip_mm <- stats::model.matrix(blip, x$training_data$data[cases, , drop = FALSE])
     if (attr(stats::terms(blip), "intercept") == 1L) {
       blip_mm <- blip_mm[, -1L, drop = FALSE]
     }

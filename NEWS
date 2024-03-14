@@ -1,5 +1,13 @@
+*** version 2.1
+
+- Fixed to allow intercept only models.
+- Added ability to allow manual treatment weights to include censoring.
+- Modified documentation for new functionality.
+- Some minor code clean up.
+
 *** version 2.0
 
 This version is a complete redevelopment of the original implementation to
 improve consistency and expand functionality across methods. It is not backwards
 compatible with prior versions.
+

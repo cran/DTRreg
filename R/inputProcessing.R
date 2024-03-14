@@ -160,13 +160,20 @@
   }
   
   if (is.null(treat.wgt.man)) {
+    if (weight %in% c("manual", "manual.with.censor")) {
+      stop("manual weights must be provided if `weight` = '", weight, "'",
+           call. = FALSE)
+    }
     local_obj$tx.wgt.man <- NA
   } else if (is.list(treat.wgt.man)) {
-    
+    if (!{weight %in% c("manual", "manual.with.censor")}) {
+      stop("manual weights cannot be provided if `weight` = '", weight, "'",
+           call. = FALSE)
+    }
     # must be a list of length K
     if (length(treat.wgt.man) != K || 
         any(!sapply(treat.wgt.man, is.numeric)) ||
-        any(!sapply(treat.wgt.man, is.vector))) {
+        any(!sapply(treat.wgt.man, is.vector, mode = "numeric"))) {
       stop("if provided, `treat.wgt.man` must be a list of K numeric vectors",
            call. = FALSE)
     }
@@ -191,8 +198,7 @@
   local_obj$dependent.vars <- list()
   local_obj$dependent.vars$treat <- lapply(models,
                                            function(x) {
-                                             rownames(attr(stats::terms(x$treat), 
-                                                           "factors"))[1L]
+                                             as.character(x$treat)[2L]
                                              }) |> unlist()
   
   if (is.null(treat.range) && treat.type == "cont") {

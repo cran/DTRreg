@@ -44,7 +44,7 @@
 
     # estimate optimal treatment
     opt.tx <- steps[[i]]$cts.obj$opt(steps[[i]]$outcome.fit,
-                                     data[stage_cases, ], quiet) |> 
+                                     data[stage_cases, , drop = FALSE], quiet) |> 
       drop()
     if (steps[[i]]$cts == "multi") {
       tmp <- factor(rep(NA, nrow(data)), levels = levels(opt.tx))
@@ -93,7 +93,7 @@
     
     shift <- stp$cts.obj$shiftY(type = type, 
                                 outcome.fit = stp$outcome.fit,
-                                data = data[stage_cases, ],
+                                data = data[stage_cases, , drop = FALSE],
                                 opt = stp$opt.treat[stage_cases], 
                                 A = stp$A)
     Y[stage_cases] <- Y[stage_cases] + shift
@@ -136,7 +136,7 @@
     
     shift <- stp$cts.obj$shiftY(type = type, 
                                 outcome.fit = stp$outcome.fit,
-                                data = data[stage_cases, ],
+                                data = data[stage_cases, , drop = FALSE],
                                 opt = stp$opt.treat[stage_cases], 
                                 A = stp$A)
     
@@ -181,7 +181,7 @@
     
     regret[[i]] <- stp$cts.obj$shiftY(type = type, 
                                       outcome.fit = stp$outcome.fit,
-                                      data = data[stage_cases, ],
+                                      data = data[stage_cases, , drop = FALSE],
                                       opt = stp$opt.treat[stage_cases], 
                                       A = stp$A)
     

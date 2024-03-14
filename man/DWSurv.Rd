@@ -11,11 +11,11 @@ DWSurv(
   tf.mod,
   cens.mod,
   data = NULL,
-  method = c("gest", "dwols", "qlearn"),
+  method = c("dwols", "qlearn"),
   interactive = FALSE,
   treat.type = c("bin", "multi", "cont"),
   treat.fam = gaussian(link = "identity"),
-  weight = c("abs", "ipw", "cipw", "qpom", "wo", "none", "manual"),
+  weight = c("abs", "ipw", "cipw", "qpom", "wo", "none", "manual", "manual.with.censor"),
   n.bins = 3L,
   treat.range = NULL,
   treat.wgt.man = NULL,
@@ -50,18 +50,20 @@ treatment is continuous, \code{\link[stats]{lm}()} will be used.}
 treatment-free model for each stage in order. No dependent variable should 
 be specified.}
 
-\item{cens.mod}{A list of formula objects specifying the censoring model for
-each stage in order. The event indicator, which takes value 1 if an event 
-was observed and 0 otherwise, should be included as the dependent variable
-and should be the same across stages. In the absence of censoring, one 
-still needs to specify an event indicator with 1s on the right-hand side of
-the formula and leave the left-hand side empty (see example below).}
+\item{cens.mod}{A list of formula objects specifying the censoring
+model for each stage in order. The event indicator, which takes value 1 if
+an event was observed and 0 otherwise, should be included as the dependent
+variable and should be the same across stages. In the absence of censoring
+or if censoring weights are provided by the user through `treat.wgt.man`, 
+(i.e., \code{weight = 'manual.with.censor'})
+one still needs to specify an event indicator on the right-hand
+side of the formula and leave the left-hand side empty (see example below).}
 
 \item{data}{A data frame containing all necessary covariates and treatments
 contained in the models. Missing data should be coded as \code{NA}.}
 
 \item{method}{The DTR method to be used, choose "dwols" for dynamic WOLS, 
-"gest" for G-estimation, or "qlearn" for Q-learning.}
+or "qlearn" for Q-learning.}
 
 \item{interactive}{If \code{TRUE} on-screen prompts will guide the user through 
 the specification of blip, treatment, and treatment-free models.}
@@ -94,11 +96,14 @@ treatments set this option to \code{c(-Inf, +Inf)}. If each stage has its own
 range, provide as a list, the ith element providing the min and max
 for the ith stage treatment.}
 
-\item{treat.wgt.man}{NULL or a list of vectors of known treatment weights can be 
+\item{treat.wgt.man}{NULL or a list of vectors of known treatment 
+(or treatment * censoring) weights can be 
 specified to be used instead of hard-coded treatment weight options.
 The \eqn{i^{th}}{ith} element of the list contains the multiplicative weights 
 for the \eqn{i^{th}}{ith} stage. Each vector must be of length \eqn{n}{n}, 
-the number of participants. Used only for \code{method = "dwols"}.}
+the number of participants. Used only for \code{method = "dwols"}. If
+providing the treatment * censoring weights, \code{cens.mod = NA} must
+be used.}
 
 \item{var.estim}{Covariance matrix estimation method, either "bootstrap"
 or "sandwich" for sandwich estimation.}
@@ -212,7 +217,7 @@ Dynamic treatment regimen estimation and inference via dynamic weighted
   
 The function \code{DWSurv()} allows estimating an optimal dynamic treatment regime
   from multi-stage trials or observational data when the outcome of interest
-  is survival time subject to right-censoring. The'. dynamic weighted survival 
+  is survival time subject to right-censoringg. The dynamic weighted survival 
   modeling (DWSurv) algorithm is implemented.  The method focuses on 
   estimating the parameters of the blip: a model of the difference in 
   expected outcome under the observed treatment and some reference treatment 
@@ -233,12 +238,12 @@ Note that as is conventional, it is assumed a larger survival time is
   preferred (which can be easily achieved via transformation of your data if 
   necessary).
   
-  Several treatment weight function options have been implemented within the 
+Several treatment weight function options have been implemented within the 
   package:
   \itemize{ 
     \item "none": No treatment weights applied. If \code{method = "dWOLS"}, this 
       selection results in the implementation of Q-learning, modified 
-      slightly to use the G-estimation or dWOLS style pseudo-outcome 
+      slightly to use the dWOLS style pseudo-outcome 
       (computed using the observed outcome modified by the estimated 
        treatment effect) rather than the traditional Q-learning outcome 
       (predicted based on model only, rather than observed outcome with 
@@ -260,8 +265,12 @@ Note that as is conventional, it is assumed a larger survival time is
       This weight is appropriate only for continuous treatments.
     \item "abs": Absolute difference \eqn{|A - E[A|...]|}{|A - E[A|...]|}. 
       appropriate only for binary treatments.
-    \item "manual": User provides weights through input \code{treat.wgt.man}.
-      Manual treatments are only used in dwols.
+    \item "manual": User provides treatment weights through input 
+    \code{treat.wgt.man}.
+    \item "manual.with.censor": User provides combined treatment * censoring
+      weights through input \code{treat.wgt.man}. Note that `cens.mod` should
+      be specified with the event indicator on the right-hand side of the 
+      formula (e.g., \code{~ status}).
    }
 }
 \examples{
@@ -269,9 +278,9 @@ Note that as is conventional, it is assumed a larger survival time is
 data(twoStageCens)
 mod <- DWSurv(time = list(~ T1, ~ T2), 
               blip.mod = list(~ X11, ~ X21), 
-              treat.mod = list(A1 ~ X11, A2 ~ X21), 
+              treat.mod = list(A1 ~ X11, A2 ~ 1), 
               tf.mod = list(~ X11 + X12, ~ X21 + X22 + X11), 
-              cens.mod = list(delta ~ X11, delta ~ X11), 
+              cens.mod = list(delta ~ 1, delta ~ X11), 
               var.estim = "sandwich", 
               data = twoStageCens)
 mod
@@ -280,7 +289,7 @@ mod
 data(twoStageSurv)
 mod_nocensoring <- DWSurv(time = list(~ T1, ~ T2), 
                           blip.mod = list(~ X11, ~ X21), 
-                          treat.mod = list(A1 ~ X11, A2 ~ X21), 
+                          treat.mod = list(A1 ~ X11, A2 ~ 1), 
                           tf.mod = list(~ X11 + X12, ~ X21 + X22 + X11), 
                           cens.mod = list(~ delta, ~ delta), 
                           var.estim = "sandwich", 
@@ -303,7 +312,6 @@ Wallace, M. P., Moodie, E. E. M., Stephens, D. A. (2017) Dynamic Treatment
   Regimen Estimation via Regression-Based Techniques: Introducing {R} Package 
   {DTRreg}. \emph{Journal of Statistical Software} \bold{80}(2), 1--20 
   (doi:10.18637/jss.v080.i02).
-  
   
 Simoneau, G., Moodie, E. E. M., Nijjar, J. S., and Platt, R. W. (2020)
   Finite Sample Variance Estimation for Optimal Dynamic Treatment

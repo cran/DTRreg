@@ -62,7 +62,7 @@
                         stop("unable to invert matrix\n\t", e$message,
                              call. = FALSE)
                       })
-  
+
   var <- {1.0 / n} * var(t(inv_mat))
 
   var

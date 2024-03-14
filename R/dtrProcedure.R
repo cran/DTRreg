@@ -21,7 +21,7 @@
 #'   var.estim: A character object. The covariance estimation method; must be
 #'     one of "bootstrap", "sandwich", or "none".
 #'   tx.weight: A character object. The type of treatment weighting.
-#'   tx.wgt.man: A list of user specified treatment weights.
+#'   tx.wgt.man: A list of user specified treatment weights. 
 #'   tx.type: A character indicating if treatment is binary, multi-nomial, or cont
 #'   n.bins: An integer required when tx is continuous and weight is qpom or pom
 #'   tx.family: A family object
@@ -29,6 +29,9 @@
 #'     include censoring models.
 #'   boot.controls: A list of control variables when bootstrap variance
 #'     is requested.
+#'   manual.censor.weight: A logical object. If TRUE, censoring weights are
+#'     included in the user provided treatment weights. Provided only if
+#'     procedure being called from DWsurv.
 #' @param quiet A logical. If TRUE, screen prints are suppressed. Used to quiet
 #'   call made by calls from bootstrap
 #' @param isSurvival A logical. If TRUE analysis is for survival data.
@@ -45,7 +48,11 @@
                  "censoring.modeled", "tx.wgt.man",
                  "tx.type", "n.bins",
                  "tx.family", "boot.controls", "full.cov")
-  if (!isSurvival) obj_musts <- c("outcome", obj_musts)
+  if (!isSurvival) {
+    obj_musts <- c("outcome", obj_musts)
+  } else {
+    obj_musts <- c("manual.censor.weight", obj_musts)
+  }
 
   stopifnot(
     "`obj` must be a list" = is.list(obj) && all(obj_musts %in% names(obj)),
@@ -169,10 +176,14 @@
     wgts <- step_obj$cens.wgt
     
     if (obj$tx.weight == "none" || obj$method == "gest") {
-      step_obj$tx.wgt <- NA
-    } else if (obj$tx.weight == "manual") {
+      step_obj$tx.wgt <- rep(1.0, step_obj$n)
+    } else if (obj$tx.weight %in% c("manual")) {
       step_obj$tx.wgt <- obj$tx.wgt.man[[k]]
       wgts <- wgts * step_obj$tx.wgt[stage_cases]
+    } else if (obj$tx.weight %in% c("manual.with.censor")) {
+      step_obj$tx.cens.wgt <- obj$tx.wgt.man[[k]]
+      step_obj$cens.wgt <- NULL
+      wgts <- step_obj$tx.cens.wgt[stage_cases]
     } else {
       step_obj$tx.wgt <- rep(NA_real_, length(stage_cases))
       step_obj$tx.wgt[stage_cases] <- .treatmentWeights(A = step_obj$A, 
@@ -191,7 +202,7 @@
       step_obj <- c(step_obj, 
                     .dwols(Y = step_obj$Y[delta_is_1],
                            A = step_obj$A[delta_is_1], 
-                           data = stage_data[delta_is_1, ],
+                           data = stage_data[delta_is_1, , drop = FALSE],
                            wgts = wgts[delta_is_1],
                            cts.obj = step_obj$cts.obj, 
                            tx.var = step_obj$tx.var))
@@ -236,7 +247,7 @@
                                       tx.wgt.man = step_obj$tx.wgt.man,
                                       data = stage_data,
                                       isSurvival = isSurvival,
-                                      d.hat = complete_case_info$d.hat[stage_cases,k]))
+                                      d.hat = complete_case_info$d.hat[stage_cases, k]))
     }
     
     # Sandwich variance estimator
@@ -257,7 +268,7 @@
       rownames(step_obj$covmat)[blip_vars] <- names(blip_vars)
       
       if (!obj$full.cov) {  
-        step_obj$covmat <- step_obj$covmat[blip_vars, blip_vars]
+        step_obj$covmat <- step_obj$covmat[blip_vars, blip_vars, drop = FALSE]
       }
     }
     

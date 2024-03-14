@@ -15,14 +15,15 @@
   if (obj$tx.type != "bin") return(NA)
   
   .each_stage <- function(models, data, covmat, psi) {
+    
     H_psi <- stats::model.matrix(models$blip, data)
-    H_psi <- H_psi[stats::complete.cases(H_psi), ]
+    H_psi <- H_psi[stats::complete.cases(H_psi), , drop = FALSE]
 
     # lower/upper limits on psi
     tmp <- covmat |> diag() |> sqrt()
     psi_l <- psi - 1.96 * tmp
     psi_u <- psi + 1.96 * tmp
-    
+
     # look at max/min value of blip based on sign of covariates and max/min of 
     # parameter CIs
     H_psi_p <- pmax(H_psi, 0.0)

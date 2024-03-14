@@ -6,7 +6,7 @@
 #'   
 #' The function \code{DWSurv()} allows estimating an optimal dynamic treatment regime
 #'   from multi-stage trials or observational data when the outcome of interest
-#'   is survival time subject to right-censoring. The'. dynamic weighted survival 
+#'   is survival time subject to right-censoringg. The dynamic weighted survival 
 #'   modeling (DWSurv) algorithm is implemented.  The method focuses on 
 #'   estimating the parameters of the blip: a model of the difference in 
 #'   expected outcome under the observed treatment and some reference treatment 
@@ -27,12 +27,12 @@
 #'   preferred (which can be easily achieved via transformation of your data if 
 #'   necessary).
 #'   
-#'   Several treatment weight function options have been implemented within the 
+#' Several treatment weight function options have been implemented within the 
 #'   package:
 #'   \itemize{ 
 #'     \item "none": No treatment weights applied. If \code{method = "dWOLS"}, this 
 #'       selection results in the implementation of Q-learning, modified 
-#'       slightly to use the G-estimation or dWOLS style pseudo-outcome 
+#'       slightly to use the dWOLS style pseudo-outcome 
 #'       (computed using the observed outcome modified by the estimated 
 #'        treatment effect) rather than the traditional Q-learning outcome 
 #'       (predicted based on model only, rather than observed outcome with 
@@ -55,21 +55,37 @@
 #'     \item "abs": Absolute difference \eqn{|A - E[A|...]|}{|A - E[A|...]|}. 
 #"       This weight is 
 #'       appropriate only for binary treatments.
-#'     \item "manual": User provides weights through input \code{treat.wgt.man}.
-#'       Manual treatments are only used in dwols.
+#'     \item "manual": User provides treatment weights through input 
+#'     \code{treat.wgt.man}.
+#'     \item "manual.with.censor": User provides combined treatment * censoring
+#'       weights through input \code{treat.wgt.man}. Note that `cens.mod` should
+#'       be specified with the event indicator on the right-hand side of the 
+#'       formula (e.g., \code{~ status}).
 #'    }
 #'   
 #' @inheritParams DTRreg
+#' @param method The DTR method to be used, choose "dwols" for dynamic WOLS, 
+#'   or "qlearn" for Q-learning.
 #' @param time A list of formula specifying the survival time variable for each 
 #'   stage in order. The time variable should be specified on the right hand 
 #'   side of the formula. No dependent variable should be specified. The list 
 #'   should be as long as the number of stages.
-#' @param cens.mod A list of formula objects specifying the censoring model for
-#'   each stage in order. The event indicator, which takes value 1 if an event 
-#'   was observed and 0 otherwise, should be included as the dependent variable
-#'   and should be the same across stages. In the absence of censoring, one 
-#'   still needs to specify an event indicator with 1s on the right-hand side of
-#'   the formula and leave the left-hand side empty (see example below).
+#' @param cens.mod A list of formula objects specifying the censoring
+#'   model for each stage in order. The event indicator, which takes value 1 if
+#'   an event was observed and 0 otherwise, should be included as the dependent
+#'   variable and should be the same across stages. In the absence of censoring
+#'   or if censoring weights are provided by the user through `treat.wgt.man`, 
+#'   (i.e., \code{weight = 'manual.with.censor'})
+#'   one still needs to specify an event indicator on the right-hand
+#'   side of the formula and leave the left-hand side empty (see example below).
+#' @param treat.wgt.man NULL or a list of vectors of known treatment 
+#'   (or treatment * censoring) weights can be 
+#'   specified to be used instead of hard-coded treatment weight options.
+#'   The \eqn{i^{th}}{ith} element of the list contains the multiplicative weights 
+#'   for the \eqn{i^{th}}{ith} stage. Each vector must be of length \eqn{n}{n}, 
+#'   the number of participants. Used only for \code{method = "dwols"}. If
+#'   providing the treatment * censoring weights, \code{cens.mod = NA} must
+#'   be used.
 #'    
 #' @return An object of class \code{DWSurv}, a list including elements
 #'     \item{K: }{The number of decision points.}
@@ -158,7 +174,6 @@
 #'   {DTRreg}. \emph{Journal of Statistical Software} \bold{80}(2), 1--20 
 #'   (doi:10.18637/jss.v080.i02).
 #'   
-#'   
 #' Simoneau, G., Moodie, E. E. M., Nijjar, J. S., and Platt, R. W. (2020)
 #'   Finite Sample Variance Estimation for Optimal Dynamic Treatment
 #'   Regimes of Survival Outcomes. \emph{Statistics in Medicine} \bold{39},
@@ -174,9 +189,9 @@
 #' data(twoStageCens)
 #' mod <- DWSurv(time = list(~ T1, ~ T2), 
 #'               blip.mod = list(~ X11, ~ X21), 
-#'               treat.mod = list(A1 ~ X11, A2 ~ X21), 
+#'               treat.mod = list(A1 ~ X11, A2 ~ 1), 
 #'               tf.mod = list(~ X11 + X12, ~ X21 + X22 + X11), 
-#'               cens.mod = list(delta ~ X11, delta ~ X11), 
+#'               cens.mod = list(delta ~ 1, delta ~ X11), 
 #'               var.estim = "sandwich", 
 #'               data = twoStageCens)
 #' mod
@@ -185,7 +200,7 @@
 #' data(twoStageSurv)
 #' mod_nocensoring <- DWSurv(time = list(~ T1, ~ T2), 
 #'                           blip.mod = list(~ X11, ~ X21), 
-#'                           treat.mod = list(A1 ~ X11, A2 ~ X21), 
+#'                           treat.mod = list(A1 ~ X11, A2 ~ 1), 
 #'                           tf.mod = list(~ X11 + X12, ~ X21 + X22 + X11), 
 #'                           cens.mod = list(~ delta, ~ delta), 
 #'                           var.estim = "sandwich", 
@@ -205,11 +220,12 @@
 DWSurv <- function(time, 
                    blip.mod, treat.mod, tf.mod, cens.mod,
                    data = NULL, 
-                   method = c("gest", "dwols", "qlearn"), 
+                   method = c("dwols", "qlearn"), 
                    interactive = FALSE,
                    treat.type = c("bin", "multi", "cont"), 
                    treat.fam = gaussian(link = "identity"), 
-                   weight = c("abs", "ipw", "cipw", "qpom", "wo", "none", "manual"),
+                   weight = c("abs", "ipw", "cipw", "qpom", "wo", "none", 
+                              "manual", "manual.with.censor"),
                    n.bins = 3L, 
                    treat.range = NULL, 
                    treat.wgt.man = NULL,
@@ -228,7 +244,7 @@ DWSurv <- function(time,
     # returned list contains 
     # $models A list. The models (blip, tf, treat) grouped according to 
     #   decision point
-    # $method A character. The DTR method (dwols, gest).
+    # $method A character. The DTR method (dwols).
     # $var.estim A character. The covariance matrix estimation method 
     #   ("none", "bootstrap", "sandwich")
     # $time A list of formulae. RHS is the time variable for each stage.
@@ -239,7 +255,6 @@ DWSurv <- function(time,
     obj$time <- NULL
     
   } else {
-    
     stopifnot(
       "`time`, `blip.mod`, `treat.mod`, `tf.mod`, and `cens.mod` must be provided" =
         !missing(time) && !missing(blip.mod) & !missing(treat.mod) & 
@@ -247,9 +262,9 @@ DWSurv <- function(time,
       "`time` must be a list of formulae of the form ~ RHS" = 
         is.list(time) && all(sapply(time, inherits, what = "formula")) &&
         all(lengths(time) == 2L),
-      "`cens.mod` must be a list of formulae" = 
-        is.list(cens.mod) && all(sapply(cens.mod, inherits, what = "formula")) &&
-        (all(lengths(cens.mod) == 2L) || all(lengths(cens.mod) == 3L)),
+      "`cens.mod` must be a list of formulae" = !is.null(cens.mod) &&
+        {is.list(cens.mod) && all(sapply(cens.mod, inherits, what = "formula")) &&
+         (all(lengths(cens.mod) == 2L) || all(lengths(cens.mod) == 3L))},
       "`data` must be NULL or a data.frame" = is.null(data) || is.data.frame(data)
     )
     
@@ -301,7 +316,11 @@ DWSurv <- function(time,
   # RHS provides the status variable. If of length 3, censoring is to be modeled
   # and LHS is status variable and RHS is model covariates
   # NOTE this is all or nothing. Can't model some stages but not others
-  obj$censoring.modeled <- length(obj$models[[1L]]$cens) == 3L
+  if (!is.null(cens.mod)) {
+    obj$censoring.modeled <- length(obj$models[[1L]]$cens) == 3L
+  } else {
+    obj$censoring.modeled <- FALSE
+  }
   
   # get all vars from the models
   data_vars <- obj$models |> 
@@ -327,7 +346,8 @@ DWSurv <- function(time,
                                 "environment\n\t", e$message, call. = FALSE)
                          })
   } else if (is.data.frame(data)) {
-    obj$data <- tryCatch(stats::model.frame(data_vars, data, na.action = stats::na.pass),
+    obj$data <- tryCatch(stats::model.frame(data_vars, data, 
+                                            na.action = stats::na.pass),
                          error = function(e) {
                            stop("unable to retrieve all covariates from the ",
                                 "`data`\n\t", e$message, call. = FALSE)
@@ -345,12 +365,16 @@ DWSurv <- function(time,
   obj$tx.weight <- match.arg(weight)
   obj$tx.type <- match.arg(treat.type)
   
-  if (obj$method == "gest" && obj$tx.weight == "manual") {
-    warning("treatment weights are not used in g-estimation", call. = FALSE)
-  }
-  
   if(obj$tx.weight == "abs" && obj$tx.type != "bin") {
     stop("cannot select `weight = 'abs'` for multinomial or continuous treatments",
+         call. = FALSE)
+  }
+  
+  obj$manual.censor.weight <- obj$tx.weight == "manual.with.censor"
+  # can't have weight = "manual.with.censor" and specify a full censoring model
+  if (obj$censoring.modeled && obj$manual.censor.weight) {
+    stop("censoring models should be of the form ~ status when ",
+         "`weight` = 'manual.with.censor'",
          call. = FALSE)
   }
   
@@ -387,8 +411,7 @@ DWSurv <- function(time,
   obj$dependent.vars$status <- lapply(obj$models, 
                                       function(x) {
                                         if (is.null(x$cens)) return(NA)
-                                        rownames(attr(stats::terms(x$cens), 
-                                                      "factors"))[1L]
+                                        as.character(x$cens)[2L]
                                       }) |> unlist() |> unique()
 
   # Ensure that status variable is 0/1 if data is censored
@@ -460,10 +483,10 @@ DWSurv <- function(time,
   
   if (is.null(obj$covmat)) obj$covmat <- NA
   if (is.null(obj$nonreg)) obj$nonreg <- NA
-  
+
   for_return <- c("K", "beta", "psi", "covmat", "psi.boot", "nonreg", 
                   "setup", "training_data", "analysis", "call")
-  obj <- obj[for_return]
+  obj <- obj[for_return[for_return %in% names(obj)]]
   
   if (addWarning) obj$warn <- warningMsg
   

@@ -12,12 +12,16 @@ Binary <- R6::R6Class(
     
     initialize = function(tf.model, blip.model, tx.var, ...) {
         private$tx.var <- tx.var
-      
-        # add the treatment variable dependence to the blip formula
-        self$blip.model <- paste("~ - 1 +", tx.var, "+", 
-                                 paste(tx.var, attr(stats::terms(blip.model), "term.labels"), 
-                                       sep = ":", collapse = "+")) |> as.formula()
         
+        # add the treatment variable dependence to the blip formula
+        blip.model.cov <- attr(stats::terms(blip.model), "term.labels")
+        if (length(blip.model.cov) > 0L) {
+          int.terms <- paste(tx.var, blip.model.cov, sep = ":", collapse = "+")
+          self$blip.model <- paste("~ - 1", tx.var, int.terms, sep = " + ") |> as.formula()
+        } else {
+          self$blip.model <- paste("~ - 1 + ", tx.var) |> as.formula()
+        }
+
         tf_vars <- paste(attr(stats::terms(tf.model), "term.labels"), collapse = "+")
         blip_vars <- paste(attr(stats::terms(self$blip.model), "term.labels"), 
                            collapse = "+")
@@ -121,9 +125,13 @@ MultiNom <- R6::R6Class(
       private$tx.levels <- tx.levels
       
       # add the treatment variable dependence to the blip formula
-      self$blip.model <- paste("~ - 1 +", tx.var, "+", 
-                               paste(tx.var, attr(stats::terms(blip.model), "term.labels"), 
-                                     sep = ":", collapse = "+")) |> as.formula()
+      blip.model.cov <- attr(stats::terms(blip.model), "term.labels")
+      if (length(blip.model.cov) > 0L) {
+        int.terms <- paste(tx.var, blip.model.cov, sep = ":", collapse = "+")
+        self$blip.model <- paste("~ - 1", tx.var, int.terms, sep = " + ") |> as.formula()
+      } else {
+        self$blip.model <- paste("~ - 1 + ", tx.var) |> as.formula()
+      }
       
       tf_vars <- paste(attr(stats::terms(tf.model), "term.labels"), collapse = "+")
       blip_vars <- paste(attr(stats::terms(self$blip.model), "term.labels"), 
@@ -257,10 +265,14 @@ ContLinearBlip <- R6::R6Class(
       private$tx.var = tx.var
         
       # add the treatment variable dependence to the blip formula
-      self$blip.model <- paste("~ - 1 +", tx.var, "+", 
-                               paste(tx.var, attr(stats::terms(blip.model), "term.labels"), 
-                                     sep = ":", collapse = "+")) |> as.formula()
-        
+      blip.model.cov <- attr(stats::terms(blip.model), "term.labels")
+      if (length(blip.model.cov) > 0L) {
+        int.terms <- paste(tx.var, blip.model.cov, sep = ":", collapse = "+")
+        self$blip.model <- paste("~ - 1", tx.var, int.terms, sep = " + ") |> as.formula()
+      } else {
+        self$blip.model <- paste("~ - 1 + ", tx.var) |> as.formula()
+      }
+      
       tf_vars <- paste(attr(stats::terms(tf.model), "term.labels"), collapse = "+")
       blip_vars <- paste(attr(stats::terms(self$blip.model), "term.labels"), 
                            collapse = "+")

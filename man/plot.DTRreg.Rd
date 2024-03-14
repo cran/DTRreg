@@ -60,7 +60,7 @@ Y <- exp(X1) + exp(X2) + gamma1 + gamma2 + rnorm(n)
 # blip model
 blip.mod <- list(~ X1, ~ X2)
 # treatment model (correctly specified)
-treat.mod <- list(A1 ~ X1, A2 ~ X2)
+treat.mod <- list(A1 ~ X1, A2 ~ 1)
 # treatment-free model (incorrectly specified)
 tf.mod <- list(~ X1, ~ X2)
 
