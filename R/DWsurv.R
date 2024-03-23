@@ -255,6 +255,8 @@ DWSurv <- function(time,
     obj$time <- NULL
     
   } else {
+    if (inherits(time, "formula")) time <- list(time)
+    if (inherits(cens.mod, "formula")) cens.mod <- list(cens.mod)
     stopifnot(
       "`time`, `blip.mod`, `treat.mod`, `tf.mod`, and `cens.mod` must be provided" =
         !missing(time) && !missing(blip.mod) & !missing(treat.mod) & 
@@ -294,7 +296,7 @@ DWSurv <- function(time,
     obj$method <- match.arg(method)
     obj$var.estim <- match.arg(var.estim)
     
-    obj$K <- length(treat.mod)
+    obj$K <- length(obj$models)
   }
   
   if (obj$method == "qlearn") {

@@ -85,7 +85,7 @@
     "`type` must be a character" = is.character(type) && is.vector(type) &&
       length(type) == 1L
   )
-  
+
   # NOTE this moves in the FORWARD direction
   for (stp in steps) {
     # identify the complete cases for the stage

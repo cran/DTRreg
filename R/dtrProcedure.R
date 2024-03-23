@@ -91,12 +91,14 @@
   if (!isSurvival) {
     # using cumulative probabilities when not survival
     complete_case_info$prob.complete.case <-
-      apply(complete_case_info$prob.complete.case, 1L, cumprod) |> t()
+      apply(complete_case_info$prob.complete.case, 1L, cumprod) |> t() |>
+      matrix(ncol = obj$K)
   }
   
   # Need to ensure that treatments align with user specification and
   # are in expected form (0/1, factor, numeric)
   tx_info <- list()
+
   for (k in 1L:obj$K) {
 
     stage_cases <- complete_case_info$last.stage >= k

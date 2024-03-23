@@ -342,7 +342,7 @@ DTRreg <- function(outcome,
     
     # Verify model structure and group by stage
     obj$models <- .modelsTest(blip.mod, treat.mod, tf.mod)
-    
+
     obj$method <- match.arg(method)
     obj$var.estim <- match.arg(var.estim)
     
@@ -355,7 +355,7 @@ DTRreg <- function(outcome,
            call. = FALSE)
     }
     
-    obj$K <- length(treat.mod)
+    obj$K <- length(obj$models)
   }
   
   if (any(is.na(obj$outcome))) {
