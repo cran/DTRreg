@@ -13,7 +13,7 @@ chooseM(
   method = c("gest", "dwols", "qlearn"),
   treat.type = c("bin", "multi", "cont"),
   treat.fam = gaussian(link = "identity"),
-  weight = c("abs", "ipw", "cipw", "qpom", "wo", "none", "manual"),
+  weight = c("overlap", "ipw", "cipw", "qpom", "none", "manual"),
   n.bins = 3L,
   treat.wgt.man = NULL,
   treat.range = NULL,
@@ -39,7 +39,8 @@ variable. If treatment is binary \code{\link[stats]{glm}(family = binomial)}
 will be 
 used to obtain parameter estimates; if treatment is multi-nomial, 
 \code{\link[nnet]{multinom}()} will be used to obtain parameter estimates; and if 
-treatment is continuous, \code{\link[stats]{lm}()} will be used.}
+treatment is continuous, \code{\link[stats]{glm}()} with the family and
+link specified by \code{treat.fam} will be used to obtain parameter estimates.}
 
 \item{tf.mod}{A list of formula objects specifying covariates of the
 treatment-free model for each stage in order. No dependent variable should 
@@ -64,13 +65,14 @@ If character object, must be one of \{"gaussian", "Gamma"\}, for which
 \code{\link[stats]{Gamma}(link = "log")} 
 will be used,
 respectively. Input is ignored for \code{treat.type = "bin"} and 
-\code{treat.type = "multi"}.}
+\code{treat.type = "multi"}. If \code{NULL} and \code{treat.type = "cont"},
+defaults to \code{gaussian(link = "identity")}.}
 
 \item{weight}{The form of the treatment weight. See details.}
 
 \item{n.bins}{An integer object. The number of bins (levels) to be used for 
 categorizing continuous doses. This input is required only when
-\code{treat.type = "cont"} and \code{weight = "wo"} or \code{weight = "qpom"}.}
+\code{treat.type = "cont"} and \code{weight = "overlap"} or \code{weight = "qpom"}.}
 
 \item{treat.wgt.man}{NULL or a list of vectors of known treatment weights can be 
 specified to be used instead of hard-coded treatment weight options.

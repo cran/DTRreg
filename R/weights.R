@@ -41,6 +41,84 @@
   
 }
 
+.initStillIn <- function(obj, isSurvival) {
+  still_in <- rep(TRUE, nrow(obj$data))
+  
+  # if complete cases or censoring is not modeled, we need to remove all data 
+  # for cases with missing data. Do not want to require complete data when 
+  # censoring is provided through the manual treatments
+  if ({!obj$censoring.modeled && !isSurvival} ||
+      {!obj$censoring.modeled && isSurvival && !obj$manual.censor.weight}) {
+    still_in <- complete.cases(obj$data)
+  }
+  still_in
+}
+
+.dependentVarsCompleteCases <- function(obj, K) {
+  # Pull treatment and possibly status and time variables
+  dependent_vars <- list()
+  cnt <- 1L
+  for (dp in c("treat", "time", "status")) {
+    if (is.null(obj$dependent.vars[[dp]])) next
+    dep_vars <- obj$dependent.vars[[dp]]
+    for (k in seq_len(min(K, length(dep_vars)))) {
+      dependent_vars[[cnt]] <- tryCatch(obj$data[, dep_vars[k]],
+                                        error = function(e) {
+                                          stop("unable to extract variable ", 
+                                               dep_vars[k], "\n\t", e$message, 
+                                               call. = FALSE)
+                                        })
+      cnt <- cnt + 1L
+    }
+  }
+  dependent_vars <- do.call(what = cbind, dependent_vars)
+  # identify the individuals with complete data
+  complete.cases(dependent_vars)
+}
+
+.modelVarsCompleteCases <- function(obj, K) {
+  lapply(obj$models[[K]], .getModelMatrix, data = obj$data) |> complete.cases()
+}
+
+.completeCases <- function(obj, K) {
+  dependent_vars_complete_cases <- .dependentVarsCompleteCases(obj, K)
+  
+  model_matrices_complete_cases <- .modelVarsCompleteCases(obj, K)
+  
+  # indicator is 1 if all stage covariates are present
+  model_matrices_complete_cases & dependent_vars_complete_cases
+  
+}
+
+.getDelta <- function(still.in, complete.cases, status) {
+  # delta is an indicator of length # participants still under analysis
+  # for non-survival analyses, it is 0 is not a complete case but still in
+  # for survival, it is the status for only the complete cases still in
+  if (is.null(status)) {
+    delta <- rep(1L, length(still.in))
+    delta[!complete.cases & still.in] <- 0L
+    delta <- delta[still.in]
+  } else {
+    still_in <- still.in & complete.cases
+    delta <- status[still_in]
+  }
+  delta
+}
+
+.updateCensorMatrices <- function(matrix.list, still.in, cc, k, cen.fit) {
+  # for the participants that remain in the cohort (no missing data yet)
+  # change last_stage to indicate their inclusion in this stage
+  matrix.list$last.stage[cc] <- k
+  
+  matrix.list$prob.complete.case[still.in, k] <- cen.fit$wt.cen
+  matrix.list$d.hat[still.in, k] <- cen.fit$D.hat
+  matrix.list$cens.mod.fitted[[k]] <- cen.fit$cens.model.fitted
+  
+  # for those that are lost at or before this stage, set as NA
+  matrix.list$prob.complete.case[!cc, k] <- NA_real_
+  matrix.list
+}
+
 #' Calculate weights for censoring or complete cases for all decision points.
 #'
 #' @noRd
@@ -76,63 +154,39 @@
 
   n_cases <- nrow(obj$data)
   
-  # this vector will indicate the last stage at which each participant
+  # this last_stage vector will indicate the last stage at which each participant
   # has complete data
-  last_stage <- integer(n_cases)
-  
-  # this matrix will contain the inverse probabilities
+  # the prob_complete matrix will contain the inverse probabilities
   # for each decision point. "missing" cases will be NA
-  prob_complete <- matrix(NA_real_, nrow = n_cases, ncol = obj$K)
-  d.hat <- matrix(NA_real_, nrow = n_cases, ncol = obj$K)
+  result_list <- list(
+    last.stage = integer(n_cases),
+    prob.complete.case = matrix(NA_real_, nrow = n_cases, ncol = obj$K),
+    d.hat = matrix(NA_real_, nrow = n_cases, ncol = obj$K),
+    cens.mod.fitted = list()
+  )
   
   # temporary vector to track cases that are still in the analysis at the
   # stage under consideration
-  still_in <- rep(TRUE, n_cases)
-  
-  # if complete cases or censoring is not modeled, we need to remove all data 
-  # for cases with missing data. Do not want to require complete data when 
-  # censoring is provided through the manual treatments
-  if ({!obj$censoring.modeled && !isSurvival} ||
-      {!obj$censoring.modeled && isSurvival && !obj$manual.censor.weight}) {
-    still_in <- complete.cases(obj$data)
-  }
+  still_in <- .initStillIn(obj, isSurvival)
 
-  fitted_censor_models <- list()
-  
   # NOTE this is in the FORWARD direction
   # This ensures that once someone has missing data that are removed from 
   # all subsequent stages
   for (k in 1L:obj$K) {
-    # Pull treatment and possibly status and time variables
-    dependent.vars <- NULL
-    for (dv in obj$dependent.vars) {
-      dependent.vars <- cbind(dependent.vars,
-                              tryCatch(obj$data[, dv[min(k, length(dv))]],
-                                       error = function(e) {
-                                         stop("unable to extract variable ", 
-                                              dv[k], "\n\t", e$message, 
-                                              call. = FALSE)
-                                       }))
-    }
-
-    model_matrices <- lapply(obj$models[[k]], .getModelMatrix, data = obj$data)
-
     # indicator is 1 if all stage covariates are present and the participant is
     # still in the cohort
-    cc <- stats::complete.cases(dependent.vars, model_matrices) & still_in
+    cc <- .completeCases(obj, k) & still_in
 
-    # for the participants that remain in the cohort (no missing data yet)
-    # change last_stage to indicate their inclusion in this stage
-    last_stage[cc] <- k
-
-    if (!isSurvival) {
-      delta <- rep(1L, n_cases)
-      delta[!cc & still_in] <- 0L
-      delta <- delta[still_in]
-    } else {
-      still_in <- still_in & cc
-      delta <- obj$data[still_in, obj$dependent.vars$status]
-    }
+    # delta is an indicator of length # participants still under analysis
+    # for non-survival analyses, it is 0 is not a complete case but still in
+    # for survival, it is the status for only the complete cases still in
+    if (!is.null(obj$dependent.vars$status))
+      status_tmp <- obj$data[[obj$dependent.vars$status]]
+    else
+      status_tmp <- NULL
+    delta <- .getDelta(still_in, cc, status_tmp)
+    
+    if (isSurvival) still_in <- still_in & cc
 
     cen_fit <- .processCensoring(obj$models[[k]]$cens, 
                                  delta = delta, 
@@ -140,22 +194,14 @@
                                  censoring.modeled = obj$censoring.modeled, 
                                  dp = k,
                                  quiet = quiet)
-
-    prob_complete[still_in, k] <- cen_fit$wt.cen
-    d.hat[still_in, k] <- cen_fit$D.hat
-    fitted_censor_models[[k]] <- cen_fit$cens.model.fitted
-
-    # for those that are lost at or before this stage, set as NA
-    prob_complete[!cc, k] <- NA_real_
     
+    result_list <- .updateCensorMatrices(result_list, still_in, cc, k, cen_fit)
+
     # adjust cases that are still under consideration
-    still_in <- still_in & cc
+    if (!isSurvival) still_in <- still_in & cc
   }
   
-  list("last.stage" = last_stage, 
-       "prob.complete.case" = prob_complete,
-       "cens.mod.fitted" = fitted_censor_models,
-       "d.hat" = d.hat)
+  result_list
 }
 
 #' Calculate treatment weights
@@ -169,7 +215,7 @@
 #' @param cts.obj An R6 object. The treatment-type specific definitions.
 #' @param n.bins An integer object. The number of bins (levels) to be used for 
 #'   categorizing continuous doses. This input is required only when
-#'   `treat.type` = "cont" and `weight` = "wo" or `weight` = "qpom".
+#'   `treat.type` = "cont" and `weight` = "overlap" or `weight` = "qpom".
 #' 
 #' @return A numeric vector object of length equivalent to input `A`
 #'
@@ -205,14 +251,12 @@
     tx_wgt <- pmin(weights, cap)
   } else if (tx.weight == "qpom") {
     tx_wgt <- q.pom(A, tx.mod.fitted, data, n.bins, cts.obj)
-  } else if (tx.weight == "wo") {
-    tx_wgt <- bin.o.fcn(A, tx.mod.fitted, data, n.bins, cts.obj)
-  } else if (tx.weight == "abs") {
-    if ("MuliNom" %in% class(cts.obj)) {
-      stop("`abs` weight is not available for multinomial treatments",
-           call. = FALSE)
+  } else if (tx.weight == "overlap") {
+    if ("Binary" %in% class(cts.obj)) {
+      tx_wgt <- abs(A - A.hat)
+    } else {
+      tx_wgt <- bin.o.fcn(A, tx.mod.fitted, data, n.bins, cts.obj)
     }
-    tx_wgt <- abs(A - A.hat)
   } else {
     tx_wgt <- rep(1.0, length(A))
   }

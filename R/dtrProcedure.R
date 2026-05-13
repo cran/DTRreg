@@ -1,3 +1,188 @@
+.getY <- function(obj, isSurvival) {
+  if (isSurvival) {
+    # numeric vector of 0's
+    Y <- obj$data |> nrow() |> numeric()
+  } else {
+    # provided outcome
+    Y <- obj$outcome
+  }
+  Y
+}
+
+.getCompleteCaseProbability <- function(obj, quiet, isSurvival) {
+  ### Complete case weights
+  # object will be a list containing `$last.stage`, `$prob.complete.case`, and
+  # `$fitted.censor.models`.
+  # `$last.stage` is an integer vector object of length n containing the 
+  #   final dp for which each participant has complete data; 
+  # `$prob.complete.case` is a numeric matrix object containing the  
+  #   weight for each participant at each stage. Note that 
+  #   prob.complete.case = NA_real_ indicates that the participant has been lost 
+  #   to follow-up.
+  # `$cens.mod.fitted` is a list containing NA_character_ values if censoring
+  #    was not fit and/or `glm` objects.
+  complete_case_info <- .completeCaseProbability(obj, quiet, isSurvival)
+  
+  if (!isSurvival) {
+    # using cumulative probabilities when not survival
+    complete_case_info$prob.complete.case <-
+      apply(complete_case_info$prob.complete.case, 1L, cumprod) |> t() |>
+      matrix(ncol = obj$K)
+  }
+  complete_case_info
+}
+
+.getTxInfo <- function(obj) {
+  # Need to ensure that treatments align with user specification and
+  # are in expected form (0/1, factor, numeric)
+
+  # process stage treatment information
+  # elements include A, A.hat, cts, cts.obj, and treat.mod.fitted
+  # Note that we keep A here because we modify `data` to be the optimal
+  # treatment as we go along; i.e., A is always the observed treatment
+  .processTreatment(stage.models = obj$models, 
+                    data = obj$data, 
+                    tx.var = obj$dependent.vars$treat, 
+                    tx.range = obj$tx.range, 
+                    tx.type = obj$tx.type,
+                    tx.family = obj$tx.family)
+  
+}
+
+.addYdelta <- function(obj, step.obj, Y, isSurvival) {
+  
+  if (isSurvival) {
+    # survival outcome is log(t_k + sum_{j = k+1}^{K} t_hat)
+    step.obj$Y <- obj$data[, obj$dependent.vars$time]
+    step.obj$Y <- log(step.obj$Y + Y)
+    
+    # status will be NA if interactive and no censoring indicated
+    # if not interactive, the user has to specify a status that is
+    # expected to contain only 1s
+    if (!is.na(obj$dependent.vars$status)) {
+      step.obj$delta <- obj$data[, obj$dependent.vars$status]
+    } else {
+      step.obj$delta <- rep(1.0, step.obj$n)
+    }
+  } else {
+    step.obj$Y <- Y
+    step.obj$delta <- rep(1.0, step.obj$n)
+  }
+  step.obj
+}
+
+
+.addTxWgt <- function(obj, step.obj) {
+  
+  if (obj$tx.weight == "none" || obj$method == "gest") {
+    step.obj$tx.wgt <- rep(1.0, step.obj$n)
+  } else if (obj$tx.weight %in% c("manual")) {
+    step.obj$tx.wgt <- obj$tx.wgt.man
+  } else if (obj$tx.weight %in% c("manual.with.censor")) {
+    step.obj$tx.cens.wgt <- obj$tx.wgt.man
+    step.obj$cens.wgt <- NULL
+  } else {
+    step.obj$tx.wgt <- .treatmentWeights(A = step.obj$A, 
+                                         A.hat = step.obj$A.hat,
+                                         tx.weight = obj$tx.weight,
+                                         tx.mod.fitted = step.obj$tx.mod.fitted,
+                                         cts.obj = step.obj$cts.obj,
+                                         n.bins = obj$n.bins,
+                                         data = obj$data)
+  }
+  step.obj
+}
+
+.addWgts <- function(obj, step.obj, complete.case.info) {
+  
+  step.obj$cens.wgt <- complete.case.info$prob.complete.case
+  wgts <- step.obj$cens.wgt
+  
+  step.obj <- .addTxWgt(obj, step.obj)
+  
+  if (obj$tx.weight %in% c("manual.with.censor")) {
+    wgts <- step.obj$tx.cens.wgt
+  } else if (obj$tx.weight != "none" && obj$method != "gest") {
+    wgts <- wgts * step.obj$tx.wgt
+  }
+  wgts <- wgts * step.obj$delta
+  step.obj$wgts <- wgts
+  step.obj
+}
+
+.performMethod <- function(obj, step.obj) {
+  
+  if (obj$method == "dwols") {
+    delta_is_1 <- step.obj$delta > 0.5
+    .dwols(Y = step.obj$Y[delta_is_1],
+           A = step.obj$A[delta_is_1], 
+           data = obj$data[delta_is_1, , drop = FALSE],
+           wgts = step.obj$wgts[delta_is_1],
+           cts.obj = step.obj$cts.obj, 
+           tx.var = step.obj$tx.var)
+  } else if (obj$method == "gest") {
+    .gest(A = step.obj$A, 
+          wgts = step.obj$wgts,
+          data = obj$data,
+          Y = step.obj$Y, 
+          A.hat = step.obj$A.hat,
+          tx.var = step.obj$tx.var,
+          cts.obj = step.obj$cts.obj, 
+          treat.mod.fitted = step.obj$tx.mod.fitted)
+  }
+}
+
+.getStage <- function(obj, k, quiet, complete.case.info, isSurvival, Y) {
+  
+  if (!quiet) message("Stage ", k, " analysis")
+  
+  stage_cases <- complete.case.info$last.stage >= k
+  
+  # Subset all vectors/matrices to stage_cases and k
+  obj$data <- obj$data[stage_cases, , drop = FALSE]
+  obj$tx.wgt.man <- if (is.list(obj$tx.wgt.man)) obj$tx.wgt.man[[k]][stage_cases] else obj$tx.wgt.man
+  obj$dependent.vars$time <- obj$dependent.vars$time[k]
+  obj$dependent.vars$treat <- obj$dependent.vars$treat[k]
+  obj$models <- obj$models[[k]]
+  obj$tx.range <- obj$tx.range[[k]]
+  
+  Y <- Y[stage_cases]
+  
+  complete.case.info$last.stage <- complete.case.info$last.stage[stage_cases]
+  complete.case.info$prob.complete.case <- complete.case.info$prob.complete.case[stage_cases, k]
+  complete.case.info$d.hat <- complete.case.info$d.hat[stage_cases, k]
+  complete.case.info$cens.mod.fitted <- complete.case.info$cens.mod.fitted[[k]]
+  
+  tx_info <- .getTxInfo(obj)
+  obj$data[, obj$dependent.vars$treat] <- tx_info$A
+  
+  # initialize step specific result list
+  step_obj <- c(
+    list(dp = k,
+         tx.var = obj$dependent.vars$treat,
+         models = obj$models,
+         n = nrow(obj$data)),
+    tx_info
+  )
+  
+  step_obj <- .addYdelta(obj, step_obj, Y, isSurvival)
+
+  step_obj <- .addWgts(obj, step_obj, complete.case.info)
+  
+  step_obj <- c(step_obj, .performMethod(obj, step_obj))
+  
+  if (!quiet) {
+    message("beta: ", paste(step_obj$beta, collapse = ", "))
+    message("psi: ", paste(step_obj$psi, collapse = ", "))
+  }
+  
+  step_obj$fitted.values <- fitted(step_obj$outcome.fit)
+  step_obj$residuals <- step_obj$Y[step_obj$delta > 0.5] - step_obj$fitted.values
+  step_obj$blip.data <- obj$data[step_obj$delta > 0.5, , drop = FALSE]
+  
+  step_obj  
+}
+
 #' Main procedure for estimating parameters across all decision points for
 #'   DTRreg
 #'
@@ -43,6 +228,7 @@
 #' @keywords internal
 .dtrProcedure <- function(obj, quiet, isSurvival = FALSE) {
 
+  # Confirm that everything is provided as expected
   obj_musts <- c("K", "dependent.vars", "models", "tx.range", 
                  "var.estim", "method", "data", "type", "tx.weight",
                  "censoring.modeled", "tx.wgt.man",
@@ -64,217 +250,25 @@
   
   obj <- obj[obj_musts]
 
+  # make sure that we aren't calling gest for multinomial treatment
   if (obj$method == "gest" && obj$tx.type == "multi") {
     stop("G-estimation for multinomial treatments is not yet implemented",
          call. = FALSE)
   }
   
-  if (isSurvival) {
-    Y <- obj$data |> nrow() |> numeric()
-  } else {
-    Y <- obj$outcome
-  }
+  # get initial Y value
+  Y <- .getY(obj, isSurvival)
 
-  ### Complete case weights
-  # object will be a list containing `$last.stage`, `$prob.complete.case`, and
-  # `$fitted.censor.models`.
-  # `$last.stage` is an integer vector object of length n containing the 
-  #   final dp for which each participant has complete data; 
-  # `$prob.complete.case` is a numeric matrix object containing the  
-  #   weight for each participant at each stage. Note that 
-  #   prob.complete.case = NA_real_ indicates that the participant has been lost 
-  #   to follow-up.
-  # `$cens.mod.fitted` is a list containing NA_character_ values if censoring
-  #    was not fit and/or `glm` objects.
-  complete_case_info <- .completeCaseProbability(obj, quiet, isSurvival)
-  
-  if (!isSurvival) {
-    # using cumulative probabilities when not survival
-    complete_case_info$prob.complete.case <-
-      apply(complete_case_info$prob.complete.case, 1L, cumprod) |> t() |>
-      matrix(ncol = obj$K)
-  }
-  
-  # Need to ensure that treatments align with user specification and
-  # are in expected form (0/1, factor, numeric)
-  tx_info <- list()
-
-  for (k in 1L:obj$K) {
-
-    stage_cases <- complete_case_info$last.stage >= k
-    stage_data <- obj$data[stage_cases, , drop = FALSE]
-
-    # process stage treatment information
-    # elements include A, A.hat, cts, cts.obj, and treat.mod.fitted
-    # Note that we keep A here because we modify `data` to be the optimal
-    # treatment as we go along; i.e., A is always the observed treatment
-    tx_tmp <- .processTreatment(stage.models = obj$models[[k]], 
-                                data = stage_data, 
-                                tx.var = obj$dependent.vars$treat[k], 
-                                tx.range = obj$tx.range[[k]], 
-                                tx.type = obj$tx.type,
-                                tx.family = obj$tx.family)
-
-    new_A <- NULL
-    if (tx_tmp$cts == "bin") {
-      new_A <- rep(NA_integer_, nrow(obj$data))
-    } else if (tx_tmp$cts == "multinom") {
-      new_A <- factor(rep(NA, nrow(obj$data)), levels = levels(tx_tmp$A))
-    } else {
-      new_A <- rep(NA, nrow(obj$data))
-    }
-    new_A[stage_cases] <- tx_tmp$A
-    obj$data[, obj$dependent.vars$treat[k]] <- new_A
-
-    tx_info[[k]] <- tx_tmp
-  }
-  
+  # Complete case weights
+  complete_case_info <- .getCompleteCaseProbability(obj, quiet, isSurvival)
   
   # stages will contain the analysis results for each decision point
   # in the order of stages (NOT steps)
   obj$stages <- vector("list", length = obj$K)
 
   for (k in obj$K:1L) {
-    if (!quiet) message("Stage ", k, " analysis")
- 
-    step_obj <- list()
     
-    # some info that will be handy to carry around for the backward analysis
-    step_obj$dp <- k
-    step_obj$tx.var <- obj$dependent.vars$treat[k]
-
-    step_obj$models <- obj$models[[k]]
-
-    stage_cases <- complete_case_info$last.stage >= k
-    step_obj$n <- sum(stage_cases)
-    
-    if (isSurvival) {
-      # survival outcome is log(t_k + sum_{j = k+1}^{K} t_hat)
-      step_obj$Y <- obj$data[stage_cases, obj$dependent.vars$time[k]]
-      step_obj$Y <- log(step_obj$Y + Y[stage_cases])
-      
-      # status will be NA if interactive and no censoring indicated
-      # if not interactive, the user has to specify a status that is
-      # expected to contain only 1s
-      if (!is.na(obj$dependent.vars$status)) {
-        step_obj$delta <- obj$data[stage_cases, obj$dependent.vars$status]
-      } else {
-        step_obj$delta <- rep(1.0, step_obj$n)
-      }
-    } else {
-      step_obj$Y <- Y[stage_cases]
-      step_obj$delta <- rep(1.0, step_obj$n)
-    }
-    delta_is_1 <- step_obj$delta > 0.5
-    
-    stage_data <- obj$data[stage_cases, , drop = FALSE]
-    
-    # process stage treatment information
-    # elements added to step_obj include A, A.hat, cts, cts.obj, and
-    # treat.mod.fitted
-    step_obj <- c(step_obj, tx_info[[k]])
-
-    step_obj$cens.wgt <- complete_case_info$prob.complete.case[stage_cases, k]
-    wgts <- step_obj$cens.wgt
-    
-    if (obj$tx.weight == "none" || obj$method == "gest") {
-      step_obj$tx.wgt <- rep(1.0, step_obj$n)
-    } else if (obj$tx.weight %in% c("manual")) {
-      step_obj$tx.wgt <- obj$tx.wgt.man[[k]]
-      wgts <- wgts * step_obj$tx.wgt[stage_cases]
-    } else if (obj$tx.weight %in% c("manual.with.censor")) {
-      step_obj$tx.cens.wgt <- obj$tx.wgt.man[[k]]
-      step_obj$cens.wgt <- NULL
-      wgts <- step_obj$tx.cens.wgt[stage_cases]
-    } else {
-      step_obj$tx.wgt <- rep(NA_real_, length(stage_cases))
-      step_obj$tx.wgt[stage_cases] <- .treatmentWeights(A = step_obj$A, 
-                                                        A.hat = step_obj$A.hat,
-                                                        tx.weight = obj$tx.weight,
-                                                        tx.mod.fitted = step_obj$tx.mod.fitted,
-                                                        cts.obj = step_obj$cts.obj,
-                                                        n.bins = obj$n.bins,
-                                                        data = stage_data)
-        wgts <- wgts * step_obj$tx.wgt[stage_cases]
-    }
-    wgts <- wgts * step_obj$delta
-    step_obj$wgts <- wgts
-
-    if (obj$method == "dwols") {
-      step_obj <- c(step_obj, 
-                    .dwols(Y = step_obj$Y[delta_is_1],
-                           A = step_obj$A[delta_is_1], 
-                           data = stage_data[delta_is_1, , drop = FALSE],
-                           wgts = wgts[delta_is_1],
-                           cts.obj = step_obj$cts.obj, 
-                           tx.var = step_obj$tx.var))
-    } else if (obj$method == "gest") {
-      step_obj <- c(step_obj,
-                    .gest(A = step_obj$A, 
-                          wgts = wgts,
-                          data = stage_data,
-                          Y = step_obj$Y, 
-                          A.hat = step_obj$A.hat,
-                          tx.var = step_obj$tx.var,
-                          cts.obj = step_obj$cts.obj, 
-                          treat.mod.fitted = step_obj$tx.mod.fitted))
-    }
-    
-    if (!quiet) {
-      message("beta: ", paste(step_obj$beta, collapse = ", "))
-      message("psi: ", paste(step_obj$psi, collapse = ", "))
-    }
-    
-    # leave procedure if parametric bootstrap requested
-    # adds covmat and psi.boot to step_obj
-    # quiet = TRUE only when already in bootstrap mode
-    if (!quiet && obj$var.estim == "bootstrap" &&
-        obj$boot.controls$type %in% c("empirical", "normal")) {
-      message("starting ", obj$boot.controls$type, " nonparametric bootstrap procedure")
-
-      if (step_obj$cts == "cts.q") {
-        stage_data[["l__txvar2__l"]] <- step_obj$A^2
-      }
-
-      residuals <- {step_obj$Y - 
-          predict(step_obj$outcome.fit, stage_data)}[delta_is_1]
-
-      step_obj <- c(step_obj, 
-                    .bootstrap_nonpar(step.obj = step_obj, 
-                                      obj = obj, 
-                                      residuals = residuals,
-                                      status.var = obj$dependent.vars$status,
-                                      tx.var = obj$dependent.vars$treat[k],
-                                      time.var = obj$dependent.vars$time[k],
-                                      tx.wgt.man = step_obj$tx.wgt.man,
-                                      data = stage_data,
-                                      isSurvival = isSurvival,
-                                      d.hat = complete_case_info$d.hat[stage_cases, k]))
-    }
-    
-    # Sandwich variance estimator
-    if (!quiet && obj$var.estim == "sandwich") {
-      step_obj$covmat <- .sandwich(cts.obj = step_obj$cts.obj, 
-                                   outcome.fit = step_obj$outcome.fit, 
-                                   Y = step_obj$Y, 
-                                   A = step_obj$A, 
-                                   A.hat = step_obj$A.hat,
-                                   wgts = wgts, 
-                                   tx.var = step_obj$tx.var, 
-                                   data = stage_data,
-                                   treat.mod.fitted = step_obj$tx.mod.fitted,
-                                   method = obj$method)
-
-      blip_vars <- step_obj$cts.obj$blip_params(step_obj$outcome.fit$coefficients)
-      colnames(step_obj$covmat)[blip_vars] <- names(blip_vars)
-      rownames(step_obj$covmat)[blip_vars] <- names(blip_vars)
-      
-      if (!obj$full.cov) {  
-        step_obj$covmat <- step_obj$covmat[blip_vars, blip_vars, drop = FALSE]
-      }
-    }
-    
-    obj$stages[[k]] <- step_obj
+    obj$stages[[k]] <- .getStage(obj, k, quiet, complete_case_info, isSurvival, Y)
     
     # There is the possibility that the optimal treatment identified in this
     # stage will change the optimal treatment in later stages that have already
@@ -296,36 +290,13 @@
                    type = obj$type)
     }
   }
+  
   obj <- c(obj, complete_case_info)
   
   obj$regret <- .stageRegret(obj$stages, complete_case_info, obj$data, obj$type)
 
-  # To conform to original return object, shift list of individual results to 
-  # individual results as lists
-  # Don't want to keep 
-  #   dp, tx.var, models, or cts.obj
-  obj$stages <- lapply(obj$stages,
-                       FUN = function(stg) {
-                         stg[c("dp", "tx.var", "models", "cts.obj")] <- NULL
-                         stg
-                       })
-  obj <- c(obj, do.call(mapply, c(obj$stages, FUN = "list", SIMPLIFY = FALSE)))
-  obj$stages <- NULL
-
   # Y if all optimal treatments followed
   obj$opt.Y <- Y
-  
-  # bootstrap standard errors
-  if (!quiet && 
-      obj$var.estim == "bootstrap" && 
-      obj$boot.controls$type == "standard") {
-    obj <- c(obj,  .bootstrap(obj = obj, isSurvival = isSurvival))
-  }
-  
-  # non-regularity
-  if (!quiet & obj$cts[[1L]] == "bin") {
-    obj$nonreg <- .varest(obj)
-  }
   
   obj$treat.vars <- obj$dependent.vars$treat
   

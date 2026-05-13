@@ -62,7 +62,7 @@ gamma2 <- A2 * (1 + X2)
 
 # observed outcome: treatment-free outcome plus blip functions
 Y <- exp(X1) + exp(X2) + gamma1 + gamma2 + rnorm(n)
-
+ 
 # models to be passed to DTRreg
 # blip model
 blip.mod <- list(~ X1, ~ X2)
@@ -73,8 +73,8 @@ tf.mod <- list(~ X1, ~ X2)
 
 # perform G-estimation
 mod1 <- DTRreg(twoStageCont$Y, blip.mod, treat.mod, tf.mod, 
-               data = twoStageCont, method = "gest")
-  
+              data = twoStageCont, method = "gest")
+              
 # predicted Y for optimal treatment
 dat <- data.frame(X1, X2, A1, A2)
 predict(mod1, newdata = dat)

@@ -46,12 +46,6 @@ Binary <- R6::R6Class(
       1.0 / {A * A.hat + {1.0 - A} * {1.0 - A.hat}}
     }, 
     
-    ipw.cap = function(A, tx.mod.fitted, ...) {
-      weights <- self$ipw(A, tx.mod.fitted)
-      cap <- quantile(weights, 0.99)
-      pmin(weights, cap)
-    },
-    
     .pom = function(...) {
       stop(".pom() is not appropriate for binary treatments", call. = FALSE)
     },
@@ -102,7 +96,10 @@ Binary <- R6::R6Class(
         data[, private$tx.var] <- 0L
         y_0 <- predict(outcome.fit, data)
         as.integer({y_1 - y_0} > 1e-8) |> drop()
-      }
+      },
+    
+    prep = function(data, A) data
+    
   ),
   private = list(
     tx.var = NULL
@@ -158,12 +155,6 @@ MultiNom <- R6::R6Class(
       deno <- A.hat[cbind(seq_len(length(A)), idx)]
       1.0 / drop(deno)
     }, 
-    
-    ipw.cap = function(A, tx.mod.fitted, ...) {
-      weights <- self$ipw(A, tx.mod.fitted)
-      cap <- quantile(weights, 0.99)
-      pmin(weights, cap)
-    },
     
     .pom = function(A, tx.mod.fitted, data, m) {
       
@@ -236,8 +227,10 @@ MultiNom <- R6::R6Class(
         est_Y[, i] <- predict(outcome.fit, data)
       }
       max_tx <- apply(est_Y, 1L, which.max)
-      private$tx.levels[max_tx]
-    }
+      factor(private$tx.levels[max_tx], levels = private$tx.levels)
+    },
+    
+    prep = function(data, A) data
   ),
   private = list(
     tx.var = NULL,
@@ -260,111 +253,44 @@ ContLinearBlip <- R6::R6Class(
       
       stop("linear blip functions are not supported", call. = FALSE)
       
-      private$max.tx = max(treat.range)
-      private$min.tx = min(treat.range)
-      private$tx.var = tx.var
-        
-      # add the treatment variable dependence to the blip formula
-      blip.model.cov <- attr(stats::terms(blip.model), "term.labels")
-      if (length(blip.model.cov) > 0L) {
-        int.terms <- paste(tx.var, blip.model.cov, sep = ":", collapse = "+")
-        self$blip.model <- paste("~ - 1", tx.var, int.terms, sep = " + ") |> as.formula()
-      } else {
-        self$blip.model <- paste("~ - 1 + ", tx.var) |> as.formula()
-      }
-      
-      tf_vars <- paste(attr(stats::terms(tf.model), "term.labels"), collapse = "+")
-      blip_vars <- paste(attr(stats::terms(self$blip.model), "term.labels"), 
-                           collapse = "+")
-        
-      self$full.model <- paste("~", tf_vars, "+", blip_vars) |> as.formula()
     },
     
     blip_params = function(coefs) {
-      possible_names <- paste0(private$tx.var, private$tx.levels[-1L])
-      nms <- names(coefs) |> strsplit(":")
-      nms_list <- lapply(nms,
-                         function(x) {
-                           any(x %in% possible_names)
-                         }) |> unlist()
-      blip_vars <- which(nms_list)
-      names(blip_vars) <- names(coefs)[blip_vars]
-      
-      blip_vars
+      stop("linear blip functions are not supported", call. = FALSE)
     },
     
     ipw = function(A, tx.mod.fitted, ...) {
-      res_working <- (A - tx.mod.fitted$fitted.values) / tx.mod.fitted$fitted.values
-      dispersion <- sum(res_working^2) / (length(A) - tx.mod.fitted$df)
-      
-      if (tx.mod.fitted$family$family == "gaussian") {
-        1.0 / dnorm(A, mean = tx.mod.fitted$fitted.values, 
-                    sd = sqrt(dispersion))
-      } else if (tx.mod.fitted$family$family == "Gamma") {
-        1.0 / dgamma(A, shape = 1.0 / dispersion,
-                     scale = tx.mod.fitted$fitted.values * dispersion)
-      } else {
-        stop("unsupported family", call. = FALSE)
-      }
+      stop("linear blip functions are not supported", call. = FALSE)
     }, 
     
-    ipw.cap = function(A, tx.mod.fitted, ...) {
-      weights <- self$ipw(A, tx.mod.fitted)
-      cap <- quantile(weights, 0.99)
-      pmin(weights, cap)
-    },
-    
     Hd = function(data, A, ...) {
-      data[, private$tx.var] <- A
-      model.matrix(self$full.model, data)
+      stop("linear blip functions are not supported", call. = FALSE)
     },
     
     Hpsi = function(data, A, ...) {
-      data[, private$tx.var] <- A
-      model.matrix(self$blip.model, data)
+      stop("linear blip functions are not supported", call. = FALSE)
     },
     
     Hw = function(data, A, A.hat, wgt, ...) {
-        data[, private$tx.var] <- {A - A.hat} * wgt
-        model.matrix(self$full.model, data)
-      },
+      stop("linear blip functions are not supported", call. = FALSE)
+    },
     
     # If DTR, add regret function; otherwise, subtract stage blip at observed
     # treatment
     shiftY = function(type, outcome.fit, data, opt, A, ...) {
-        if (type == "DTR") {
-          self$regret(outcome.fit, data, opt, A)
-        } else {
-          self$regret(outcome.fit, data, 0.0, A)
-        }
-      },
+      stop("linear blip functions are not supported", call. = FALSE)
+    },
     
     regret = function(outcome.fit, data, opt, A) {
-        # predict treatment at optimal treatment
-        data[, private$tx.var] <- opt
-        at_opt <- predict(outcome.fit, data)
-        
-        # predict treatment at observed treatment
-        data[, private$tx.var] <- A
-        at_A <- predict(outcome.fit, data)
-
-        at_opt - at_A
+      stop("linear blip functions are not supported", call. = FALSE)
     },
     
     # estimate optimal treatment
     opt = function(outcome.fit, data, ...) {
-        # use treatment values to extract only the blip component
-        data[, private$tx.var] <- 1.0
-        y_full <- predict(outcome.fit, data)
-        data[, private$tx.var] <- 0.0
-        y_me <- predict(outcome.fit, data)
-        blip <- y_full - y_me
-        
-        tst <- as.numeric(blip > 0) |> drop() |> as.numeric()
-        res <- tst * private$max.tx + (1.0 - tst) * private$min.tx
-        res
-      }
+      stop("linear blip functions are not supported", call. = FALSE)
+    },
     
+    prep = function(data, A) stop("linear blip functions are not supported", call. = FALSE)
   ),
   private = list(
     min.tx = NULL,
@@ -388,7 +314,7 @@ ContQuadraticBlip <- R6::R6Class(
         private$max.tx <- max(treat.range)
         private$min.tx <- min(treat.range)
         private$tx.var <- tx.var
-        private$tx.var.b <- "l__txvar2__l"
+        private$tx.var.b <- paste0(".__", tx.var, "_sq__.")
         
         # need to identify quad and linear
         # this should never be an intercept only model
@@ -406,7 +332,7 @@ ContQuadraticBlip <- R6::R6Class(
                                # any terms that includes tx.var is a quadratic
                                # convert I(a^2) to a new variable to facilitate
                                # later methods
-                               elems[elems == tx.var] <- "l__txvar2__l"
+                               elems[elems == tx.var] <- private$tx.var.b
                              } else {
                                # add treatment as interaction term
                                elems <- c(tx.var, elems)
@@ -417,7 +343,7 @@ ContQuadraticBlip <- R6::R6Class(
         self$blip.model <- paste("~ -1 +", tx.var, "+",
                                  paste(mod_vars, collapse = "+")) |> 
           as.formula()
-        
+
         tf_vars <- paste(attr(stats::terms(tf.model), "term.labels"), collapse = "+")
         blip_vars <- paste(attr(stats::terms(self$blip.model), "term.labels"), 
                            collapse = "+")
@@ -425,7 +351,7 @@ ContQuadraticBlip <- R6::R6Class(
     },
     
     blip_params = function(coefs) {
-      possible_names <- paste0(private$tx.var, private$tx.levels[-1L])
+      possible_names <- c(private$tx.var, private$tx.var.b)
       nms <- names(coefs) |> strsplit(":")
       nms_list <- lapply(nms,
                          function(x) {
@@ -451,16 +377,9 @@ ContQuadraticBlip <- R6::R6Class(
       }
     }, 
     
-    ipw.cap = function(A, tx.mod.fitted, ...) {
-      weights <- self$ipw(A, tx.mod.fitted)
-      cap <- quantile(weights, 0.99)
-      pmin(weights, cap)
-    },
-    
-    
     .pom = function(A, tx.mod.fitted, data, m) {
       if (all(is.null(tx.mod.fitted)) || all(is.na(tx.mod.fitted))) {
-        stop("cannot use `weight = 'qpom' or 'wo' if treatment not modeled",
+        stop("cannot use `weight = 'qpom' or 'overlap' if treatment not modeled",
              call. = FALSE)
       }
       
@@ -560,7 +479,12 @@ ContQuadraticBlip <- R6::R6Class(
           
         }
         pmin(pmax(opt, private$min.tx), private$max.tx)
-      }
+      },
+    
+    prep = function(data, A) {
+      data[[private$tx.var.b]] <- A^2
+      data
+    }
     
   ),
   private = list(

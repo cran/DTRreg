@@ -25,7 +25,7 @@
       all(lengths(blip.mod) == 2L),
     "`tf.mod` must be a list of formulae of the form ~ RHS" = 
       is.list(tf.mod) && all(sapply(tf.mod, inherits, what = "formula")) &&
-      all(lengths(blip.mod) == 2L)
+      all(lengths(tf.mod) == 2L)
   )
   
   if (length(treat.mod) != length(blip.mod) || 
@@ -73,14 +73,16 @@
     missing.mod[[1L]] <- ~ 1
     
     vars <- lapply(models[[1L]], all.vars) |> unlist() |> unique()
-    for (i in 2L:K) {
-      # missing model defined by all previous stage model covariates
-      missing.mod[[i]] <- stats::as.formula(paste("~", paste(vars, collapse = "+")))
-      message("Stage ", i, " missingness model defined as ",
-              deparse(missing.mod[[i]]))
-      
-      # include ith stage model covariates in vector of covariates
-      vars <- c(vars, lapply(models[[i]], all.vars) |> unlist()) |> unique()
+    if (K > 1L) {
+      for (i in 2L:K) {
+        # missing model defined by all previous stage model covariates
+        missing.mod[[i]] <- stats::as.formula(paste("~", paste(vars, collapse = "+")))
+        message("Stage ", i, " missingness model defined as ",
+                deparse(missing.mod[[i]]))
+        
+        # include ith stage model covariates in vector of covariates
+        vars <- c(vars, lapply(models[[i]], all.vars) |> unlist()) |> unique()
+      }
     }
   }
   
@@ -143,9 +145,9 @@
 .treatmentTest <- function(weight, treat.type, n.bins, treat.wgt.man,
                            treat.range, treat.fam, K, models, data) {
   local_obj <- list()
-  
+
   local_obj$n.bins <- NA_integer_
-  if (weight %in% c("qpom", "wo")) {
+  if (weight %in% c("qpom")) {
     if (treat.type == "cont") {
       if (is.numeric(n.bins) && is.vector(n.bins) && length(n.bins) == 1L &&
           isTRUE(all.equal(n.bins, round(n.bins)))) {
@@ -154,8 +156,19 @@
         stop("`n.bins` must be an integer", call. = FALSE)
       }
     } else if (treat.type != "multi") {
-      stop("binary treatments are not appropriate for `weights` 'qpom' or 'wo'", 
+      stop("binary treatments are not appropriate for `weight` 'qpom'", 
            call. = FALSE)
+    }
+  }
+  
+  if (weight %in% c("overlap")) {
+    if (treat.type == "cont") {
+      if (is.numeric(n.bins) && is.vector(n.bins) && length(n.bins) == 1L &&
+          isTRUE(all.equal(n.bins, round(n.bins)))) {
+        local_obj$n.bins <- n.bins
+      } else {
+        stop("`n.bins` must be an integer", call. = FALSE)
+      }
     }
   }
   
@@ -202,7 +215,7 @@
                                              }) |> unlist()
   
   if (is.null(treat.range) && treat.type == "cont") {
-    As <- tryCatch(data[, local_obj$dependent.vars$treat],
+    As <- tryCatch(data[, local_obj$dependent.vars$treat, drop = FALSE],
                    error = function(e) {
                      stop("unable to retrieve treatment variables from `data`\n\t",
                           e$message, call. = FALSE)
@@ -274,7 +287,11 @@
 #'   
 #' @keywords internal
 .statusTest <- function(status, data) {
-  
+
+  if (all(is.na(status))) {
+    message("data is not censored")
+    return(data)
+  }
   if (!all(status == status[1L])) {
     stop("more than 1 status variable has been provided", call. = FALSE)
   }

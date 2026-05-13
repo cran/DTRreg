@@ -19,6 +19,12 @@
     H_psi <- stats::model.matrix(models$blip, data)
     H_psi <- H_psi[stats::complete.cases(H_psi), , drop = FALSE]
 
+    n_psi <- length(psi)
+    if (nrow(covmat) > n_psi) {
+      idx    <- seq(nrow(covmat) - n_psi + 1L, nrow(covmat))
+      covmat <- covmat[idx, idx, drop = FALSE]
+    }
+    
     # lower/upper limits on psi
     tmp <- covmat |> diag() |> sqrt()
     psi_l <- psi - 1.96 * tmp

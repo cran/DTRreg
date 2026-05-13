@@ -6,7 +6,7 @@
 #'   
 #' The function \code{DWSurv()} allows estimating an optimal dynamic treatment regime
 #'   from multi-stage trials or observational data when the outcome of interest
-#'   is survival time subject to right-censoringg. The dynamic weighted survival 
+#'   is survival time subject to right-censoring. The dynamic weighted survival 
 #'   modeling (DWSurv) algorithm is implemented.  The method focuses on 
 #'   estimating the parameters of the blip: a model of the difference in 
 #'   expected outcome under the observed treatment and some reference treatment 
@@ -49,12 +49,9 @@
 #'       continuous doses or multinomial treatments; probabilities are 
 #'       calculated using a proportional odds model.
 #'       This weight is appropriate only for continuous and multinomial treatments.
-#'     \item "wo": overlap weights for the categorized continuous doses 
-#'       or multinomial treatments (Li and Li, 2019).
-#'       This weight is appropriate only for continuous treatments.
-#'     \item "abs": Absolute difference \eqn{|A - E[A|...]|}{|A - E[A|...]|}. 
-#"       This weight is 
-#'       appropriate only for binary treatments.
+#'     \item "overlap": overlap weights for the categorized continuous doses 
+#'       or multinomial treatments (Li and Li, 2019) and the absolute difference 
+#'       \eqn{|A - E[A|...]|}{|A - E[A|...]|} for binary treatments.
 #'     \item "manual": User provides treatment weights through input 
 #'     \code{treat.wgt.man}.
 #'     \item "manual.with.censor": User provides combined treatment * censoring
@@ -62,6 +59,17 @@
 #'       be specified with the event indicator on the right-hand side of the 
 #'       formula (e.g., \code{~ status}).
 #'    }
+#'    
+#'  Note that the overlap weights were initially termed "absolute value weights" 
+#'    in Wallace and Moodie's (2015, Biometrics, Doubly-robust dynamic 
+#'    treatment regimen estimation via weighted least squares. 71:636-644) and 
+#'    abbreviated \code{abs} in earlier versions of this package. In addition, the 
+#'    overlap weights for continuous or multinomial treatments were termed 
+#'    \code{wo} in previous versions, which corresponds to their labeling in 
+#'    Schulz & Moodie (2021, Journal of the American Statistical Association, 
+#'    Doubly robust estimation of optimal dosing strategies 116:256-268.).
+#'    Since version 2.4, these have been united under \code{overlap}, and
+#'    \code{abs} and \code{wo} have been deprecated.
 #'   
 #' @inheritParams DTRreg
 #' @param method The DTR method to be used, choose "dwols" for dynamic WOLS, 
@@ -107,7 +115,7 @@
 #'         \item tx.weight: The treatment weighting used for the analysis.
 #'         \item tx.type: Treatment was binary, multinomial, or continuous.
 #'         \item n.bins: The number of bins (levels) used for categorizing
-#'           continuous doses when \code{tx.weight = "wo"} or 
+#'           continuous doses when \code{tx.weight = "overlap"} or 
 #'           \code{tx.weight = "qpom"}.
 #'         \item tx.wgt.man: Any user provided treatment weights.
 #'         \item tx.range: For continuous treatments, the range of allowed
@@ -215,7 +223,7 @@
 #'
 #' @importFrom stats as.formula family Gamma gaussian get_all_vars model.frame terms
 #' @importFrom stats na.pass
-#' @include dtrProcedure.R inputProcessing.R interactive.R
+#' @include dtrProcedure.R inputProcessing.R interactive.R variance.R
 #' @export
 DWSurv <- function(time, 
                    blip.mod, treat.mod, tf.mod, cens.mod,
@@ -224,7 +232,7 @@ DWSurv <- function(time,
                    interactive = FALSE,
                    treat.type = c("bin", "multi", "cont"), 
                    treat.fam = gaussian(link = "identity"), 
-                   weight = c("abs", "ipw", "cipw", "qpom", "wo", "none", 
+                   weight = c("overlap", "ipw", "cipw", "qpom", "none", 
                               "manual", "manual.with.censor"),
                    n.bins = 3L, 
                    treat.range = NULL, 
@@ -238,6 +246,23 @@ DWSurv <- function(time,
                                              interrupt = FALSE), 
                    dtr = TRUE,
                    full.cov = FALSE) {
+  
+  # soft deprecation - remap before match.arg validates
+  if (!missing(weight)) {
+    if (identical(weight, "abs")) {
+      warning("'abs' has been renamed 'overlap'. Please update your code. ",
+              "'abs' will be removed in a future version.", call. = FALSE)
+      weight <- "overlap"
+    } else if (identical(weight, "wo")) {
+      warning("'wo' has been renamed 'overlap'. Please update your code. ",
+              "'wo' will be removed in a future version.", call. = FALSE)
+      weight <- "overlap"
+    }
+  }
+  
+  # now validate - "abs" and "wo" are not in this list
+  weight <- match.arg(weight, c("overlap", "ipw", "cipw", "qpom", "none", "manual", "manual.with.censor"))
+  
   
   # if interactive mode chosen, build standardized input from user input
   if (interactive) {
@@ -367,11 +392,6 @@ DWSurv <- function(time,
   obj$tx.weight <- match.arg(weight)
   obj$tx.type <- match.arg(treat.type)
   
-  if(obj$tx.weight == "abs" && obj$tx.type != "bin") {
-    stop("cannot select `weight = 'abs'` for multinomial or continuous treatments",
-         call. = FALSE)
-  }
-  
   obj$manual.censor.weight <- obj$tx.weight == "manual.with.censor"
   # can't have weight = "manual.with.censor" and specify a full censoring model
   if (obj$censoring.modeled && obj$manual.censor.weight) {
@@ -390,7 +410,7 @@ DWSurv <- function(time,
                           K = obj$K, 
                           data = obj$data,
                           models = obj$models))
-  
+
   if (obj$var.estim != "none" && is.list(obj$tx.mod.man)) {
     warningMsg <- paste("Treatment weights were supplied as an argument",
                         "(generated outside the DWSurv function);",
@@ -401,7 +421,7 @@ DWSurv <- function(time,
   } else {
     addWarning <- FALSE
   }
-  
+
   ### Status and Time variables  
   obj$dependent.vars$time <- lapply(time, 
                                     function(x) {
@@ -438,6 +458,25 @@ DWSurv <- function(time,
   }
   
   obj <- .dtrProcedure(obj = obj, quiet = FALSE, isSurvival = TRUE)
+  
+  obj <- .computeVariance(obj, isSurvival = TRUE)
+  
+  # To conform to original return object, shift list of individual results to 
+  # individual results as lists
+  # Don't want to keep 
+  #   dp, tx.var, models, or cts.obj
+  obj$stages <- lapply(obj$stages,
+                       FUN = function(stg) {
+                         stg[c("dp", "tx.var", "models", "cts.obj")] <- NULL
+                         stg
+                       })
+  obj <- c(obj, do.call(mapply, c(obj$stages, FUN = "list", SIMPLIFY = FALSE)))
+  obj$stages <- NULL
+  
+  # non-regularity
+  if (obj$cts[[1L]] == "bin") {
+    obj$nonreg <- .varest(obj)
+  }
   
   obj$call <- match.call()
   
@@ -477,7 +516,10 @@ DWSurv <- function(time,
                       "Y" = "Y",
                       "regret" = "regret",
                       "opt.treat" = "opt.treat", 
-                      "opt.Y" = "opt.Y")
+                      "opt.Y" = "opt.Y",
+                      "fitted.values" = "fitted.values",
+                      "residuals" = "residuals",
+                      "blip.data" = "blip.data")
   analysis <- obj[analysis_names]
   obj[analysis_names] <- NULL
   names(analysis) <- names(analysis_names)

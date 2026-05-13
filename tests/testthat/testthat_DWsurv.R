@@ -1,13 +1,11 @@
 # testing 12/31/2023 updates
 
-dev <- FALSE
-
 test_that("intercept only is not an issue; censored data", {
-  if (!dev) skip("for development only")
+  skip_on_cran()
   data("twoStageCens")
   
   for (method in c("dwols", "qlearn")) {
-    for (weight in c("abs", "ipw", "cipw", "none")) {
+    for (weight in c("overlap", "ipw", "cipw", "none")) {
       for (var.estim in c("none", "bootstrap", "sandwich")) {
         for (full.cov in c(TRUE, FALSE)) {
           expect_no_error(DWSurv(time = list(~ T1, ~ T2), 
@@ -27,7 +25,7 @@ test_that("intercept only is not an issue; censored data", {
 })
 
 test_that("intercept only is not an issue; censored multinomial data", {
-  if (!dev) skip("for development only")
+  skip_on_cran()
   data("twoStageCens")
   twoStageCens$A1 <- withr::with_seed(1234, sample(1:3, nrow(twoStageCens), replace = TRUE))
   twoStageCens$A2[!is.na(twoStageCens$A2)] <- withr::with_seed(2345, 
@@ -36,7 +34,7 @@ test_that("intercept only is not an issue; censored multinomial data", {
                                                                       replace = TRUE))
   
   for (method in c("dwols", "qlearn")) {
-    for (weight in c("ipw", "cipw", "qpom", "wo", "none")) {
+    for (weight in c("ipw", "cipw", "qpom", "overlap", "none")) {
       for (var.estim in c("none", "bootstrap", "sandwich")) {
         for (full.cov in c(TRUE, FALSE)) {
           expect_no_error(DWSurv(time = list(~ T1, ~ T2), 
@@ -57,7 +55,7 @@ test_that("intercept only is not an issue; censored multinomial data", {
 })
 
 test_that("intercept only is not an issue; censored continuous data", {
-  if (!dev) skip("for development only")
+  skip_on_cran()
   data("twoStageCens")
   twoStageCens$A1 <- withr::with_seed(1234, stats::runif(nrow(twoStageCens)))
   twoStageCens$A2[!is.na(twoStageCens$A2)] <- 
@@ -65,7 +63,7 @@ test_that("intercept only is not an issue; censored continuous data", {
                      stats::runif(sum(!is.na(twoStageCens$A2))))
   
   for (method in c("dwols", "qlearn")) {
-    for (weight in c("ipw", "cipw", "qpom", "wo", "none")) {
+    for (weight in c("ipw", "cipw", "qpom", "overlap", "none")) {
       for (var.estim in c("none", "bootstrap", "sandwich")) {
         for (full.cov in c(TRUE, FALSE)) {
           expect_no_error(DWSurv(time = list(~ T1, ~ T2), 
@@ -86,11 +84,11 @@ test_that("intercept only is not an issue; censored continuous data", {
 })
   
 test_that("intercept only is not an issue; survival data", {
-  if (!dev) skip("for development only")
+  skip_on_cran()
   data("twoStageSurv")
   
   for (method in c("dwols", "qlearn")) {
-    for (weight in c("abs", "ipw", "cipw", "none")) {
+    for (weight in c("overlap", "ipw", "cipw", "none")) {
       for (var.estim in c("none", "bootstrap", "sandwich")) {
         for (full.cov in c(TRUE, FALSE)) {
           expect_no_error(DWSurv(time = list(~ T1, ~ T2), 
@@ -110,7 +108,7 @@ test_that("intercept only is not an issue; survival data", {
 })
 
 test_that("intercept only is not an issue; survival multinomial data", {
-  if (!dev) skip("for development only")
+  skip_on_cran()
   data("twoStageSurv")
   twoStageSurv$A1 <- withr::with_seed(1234, sample(1:3, nrow(twoStageSurv), replace = TRUE))
   twoStageSurv$A2[!is.na(twoStageSurv$A2)] <- withr::with_seed(2345, 
@@ -119,7 +117,7 @@ test_that("intercept only is not an issue; survival multinomial data", {
                                                                       replace = TRUE))
   
   for (method in c("dwols", "qlearn")) {
-    for (weight in c("ipw", "cipw", "qpom", "wo", "none")) {
+    for (weight in c("ipw", "cipw", "qpom", "overlap", "none")) {
       for (var.estim in c("none", "bootstrap", "sandwich")) {
         for (full.cov in c(TRUE, FALSE)) {
           expect_no_error(DWSurv(time = list(~ T1, ~ T2), 
@@ -140,7 +138,7 @@ test_that("intercept only is not an issue; survival multinomial data", {
 })
 
 test_that("intercept only is not an issue; survival continuous data", {
-  if (!dev) skip("for development only")
+  skip_on_cran()
   data("twoStageSurv")
   twoStageSurv$A1 <- withr::with_seed(1234, stats::runif(nrow(twoStageSurv)))
   twoStageSurv$A2[!is.na(twoStageSurv$A2)] <- 
@@ -148,7 +146,7 @@ test_that("intercept only is not an issue; survival continuous data", {
                      stats::runif(sum(!is.na(twoStageSurv$A2))))
   
   for (method in c("dwols", "qlearn")) {
-    for (weight in c("ipw", "cipw", "qpom", "wo", "none")) {
+    for (weight in c("ipw", "cipw", "qpom", "overlap", "none")) {
       for (var.estim in c("none", "bootstrap", "sandwich")) {
         for (full.cov in c(TRUE, FALSE)) {
           expect_no_error(DWSurv(time = list(~ T1, ~ T2), 
@@ -169,11 +167,11 @@ test_that("intercept only is not an issue; survival continuous data", {
 })
 
 test_that("intercept only is not an issue; cont data", {
-  if (!dev) skip("for development only")
+  skip_on_cran()
   data("twoStageCont")
 
   for (method in c("gest", "dwols", "qlearn")) {
-    for (weight in c("abs", "ipw", "cipw", "none")) {
+    for (weight in c("overlap", "ipw", "cipw", "none")) {
       for (var.estim in c("none", "bootstrap", "sandwich")) {
         for (full.cov in c(TRUE, FALSE)) {
           for (miss in c("drop", "ipw")) {
@@ -196,7 +194,7 @@ test_that("intercept only is not an issue; cont data", {
 })
 
 test_that("intercept only is not an issue; cont multinomial data", {
-  if (!dev) skip("for development only")
+  skip_on_cran()
   data("twoStageCont", package = "DTRreg")
   twoStageCont$A1 <- withr::with_seed(1234, sample(1:3, nrow(twoStageCont), replace = TRUE))
   twoStageCont$A2[!is.na(twoStageCont$A2)] <- withr::with_seed(2345, 
@@ -205,7 +203,7 @@ test_that("intercept only is not an issue; cont multinomial data", {
                                                                       replace = TRUE))
   
   for (method in c("dwols", "qlearn")) {
-    for (weight in c("ipw", "cipw", "qpom", "wo", "none")) {
+    for (weight in c("ipw", "cipw", "qpom", "overlap", "none")) {
       for (var.estim in c("none", "bootstrap", "sandwich")) {
         for (full.cov in c(TRUE, FALSE)) {
           for (miss in c("drop", "ipw")) {
@@ -229,14 +227,14 @@ test_that("intercept only is not an issue; cont multinomial data", {
 })
 
 test_that("intercept only is not an issue; cont continuous data", {
-  if (!dev) skip("for development only")
+  skip_on_cran()
   data("twoStageCont", package = "DTRreg")
   twoStageCont$A1 <- withr::with_seed(1234, stats::runif(nrow(twoStageCont)))
   twoStageCont$A2[!is.na(twoStageCont$A2)] <- withr::with_seed(2345, 
                                                                stats::runif(!is.na(twoStageCont$A2)))
   
   for (method in c("gest", "dwols", "qlearn")) {
-    for (weight in c("ipw", "cipw", "qpom", "wo", "none")) {
+    for (weight in c("ipw", "cipw", "qpom", "overlap", "none")) {
       for (var.estim in c("none", "bootstrap", "sandwich")) {
         for (full.cov in c(TRUE, FALSE)) {
           for (miss in c("drop", "ipw")) {
@@ -372,10 +370,16 @@ test_that("testing the ability to specify censoring and treatment through manual
   censor_wgts <- original$analysis$cens.wgt
   treat_wgts <- original$analysis$tx.wgt
   
+  n_total    <- nrow(twoStageCens)
+  stage1_idx <- original$analysis$last.stage >= 1L
+  stage2_idx <- original$analysis$last.stage >= 2L
+  
   tx_man <- list()
-  tx_man[[1L]] <- censor_wgts[[1L]] * treat_wgts[[1L]]
-  tx_man[[2L]] <- treat_wgts[[2L]]
-  tx_man[[2L]][!is.na(treat_wgts[[2L]])] <- censor_wgts[[2L]]
+  tx_man[[1L]] <- rep(NA_real_, n_total)
+  tx_man[[1L]][stage1_idx] <- censor_wgts[[1L]] * treat_wgts[[1L]]
+  
+  tx_man[[2L]] <- rep(NA_real_, n_total)
+  tx_man[[2L]][stage2_idx] <- censor_wgts[[2L]]
   
   manual <- DWSurv(time = list(~ T1, ~ T2), 
                    blip.mod = list(~ X11, ~ 1), 

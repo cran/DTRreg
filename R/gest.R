@@ -48,7 +48,7 @@
                    treat.mod.fitted = treat.mod.fitted)
 
   # get estimates
-  est <- tryCatch(solve(crossprod(Hw, Hd), crossprod(Hw, Y)),
+  est <- tryCatch(solve(crossprod(Hw, Hd), crossprod(Hw, Y)) |> drop(),
                   error = function(e) {
                     stop("unable to invert matrix\n\t", e$message,
                          call. = FALSE)

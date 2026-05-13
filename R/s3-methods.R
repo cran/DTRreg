@@ -136,11 +136,42 @@ summary.DTRreg <- function(object,...) {
 #'   
 #' @author Michael Wallace
 #' 
-#' @template data_setup
-#' @template model_definitions
-#' @template g_est
 #' @examples
-#'   
+#' # example single run of a 2-stage g-estimation analysis
+#' 
+#' set.seed(1)
+#' 
+#' # expit function
+#' expit <- function(x) { 1.0 / (1.0 + exp(-x)) }
+#' 
+#' # sample size
+#' n <- 10000
+#' 
+#' # variables (X = patient information, A = treatment)
+#' X1 <- rnorm(n)
+#' A1 <- rbinom(n, 1, expit(X1))
+#' X2 <- rnorm(n)
+#' A2 <- rbinom(n, 1, expit(X2))
+#' 
+#' # blip functions
+#' gamma1 <- A1 * (1 + X1)
+#' gamma2 <- A2 * (1 + X2)
+#' 
+#' # observed outcome: treatment-free outcome plus blip functions
+#' Y <- exp(X1) + exp(X2) + gamma1 + gamma2 + rnorm(n)
+#'  
+#' # models to be passed to DTRreg
+#' # blip model
+#' blip.mod <- list(~ X1, ~ X2)
+#' # treatment model (correctly specified)
+#' treat.mod <- list(A1 ~ X1, A2 ~ 1)
+#' # treatment-free model (incorrectly specified)
+#' tf.mod <- list(~ X1, ~ X2)
+#' 
+#' # perform G-estimation
+#' mod1 <- DTRreg(twoStageCont$Y, blip.mod, treat.mod, tf.mod, 
+#'               data = twoStageCont, method = "gest")
+#'               
 #' # predicted Y for optimal treatment
 #' dat <- data.frame(X1, X2, A1, A2)
 #' predict(mod1, newdata = dat)
@@ -151,47 +182,38 @@ summary.DTRreg <- function(object,...) {
 #' @concept dynamic weighted ordinary least squares
 #' @export
 predict.DTRreg <- function(object, newdata, treat.range = NULL, ...) {
-  
   K <- object$K
   
   stopifnot("`treat.range` must be a list of length `stage`" = is.null(treat.range) ||
               {is.list(treat.range) && all(lengths(treat.range) == 2L)})
-
+  
+  tx.range <- if (!is.list(treat.range)) object$setup$tx.range[[1L]] else treat.range[[1L]]
+  cts_obj <- switch(object$analysis$cts[[1L]],
+                    "bin"      = Binary$new(tf.model   = object$setup$models[[1L]]$tf,
+                                            blip.model = object$setup$models[[1L]]$blip,
+                                            tx.var     = object$setup$tx.vars[1L]),
+                    "multinom" = MultiNom$new(tf.model   = object$setup$models[[1L]]$tf,
+                                              blip.model = object$setup$models[[1L]]$blip,
+                                              tx.var     = object$setup$tx.vars[1L],
+                                              tx.levels  = levels(object$training_data$A[[1L]])),
+                    "cts.q"    = ContQuadraticBlip$new(tf.model    = object$setup$models[[1L]]$tf,
+                                                       blip.model  = object$setup$models[[1L]]$blip,
+                                                       tx.var      = object$setup$tx.vars[1L],
+                                                       treat.range = tx.range)
+  )
+  
   if (!missing(newdata)) {
-    if (!all(complete.cases(newdata))) {
+    if (!all(complete.cases(newdata))) 
       stop("if provided, `newdata` must be complete", call. = FALSE)
-    }
-    
-    if (object$analysis$cts[[1L]] == "bin") {
-      cts_obj <- Binary$new(tf.model = object$setup$models[[1L]]$tf, 
-                            blip.model = object$setup$models[[1L]]$blip, 
-                            tx.var = object$setup$tx.vars[1L])
-    } else if (object$analysis$cts[[1L]] == "multinom") {
-      cts_obj <- MultiNom$new(tf.model = object$setup$models[[1L]]$tf, 
-                              blip.model = object$setup$models[[1L]]$blip, 
-                              tx.var = object$setup$tx.vars[1L], 
-                              tx.levels = levels(object$training_data$A[[1L]]))
-    } else if (object$analysis$cts[[1L]] == "cts.q") {
-      if (!is.list(treat.range)) {
-        tx.range <- object$setup$tx.range[[1L]]
-      } else {
-        tx.range <- treat.range[[1L]]
-      }
-      cts_obj <- ContQuadraticBlip$new(tf.model = object$setup$models[[1L]]$tf, 
-                                       blip.model = object$setup$models[[1L]]$blip, 
-                                       tx.var = object$setup$tx.vars[1L],
-                                       treat.range = tx.range)
-    }
-    newdata[[object$setup$tx.vars[1L]]] <- 
-      cts_obj$opt(outcome.fit = object$analysis$outcome.fit[[1L]], 
-                  data = newdata)
+    newdata[[object$setup$tx.vars[1L]]] <-
+      cts_obj$opt(outcome.fit = object$analysis$outcome.fit[[1L]], data = newdata)
   } else {
     newdata <- object$training_data$data
     newdata[[object$setup$tx.vars[1L]]] <- object$analysis$opt.treat[[1L]]
   }
-  if (object$analysis$cts[[1L]] == "cts.q") {
-    newdata[["l__txvar2__l"]] <- newdata[[object$setup$tx.vars[1L]]]^2
-  }
+  
+  newdata <- cts_obj$prep(newdata, newdata[[object$setup$tx.vars[1L]]])
+  
   pred <- predict(object$analysis$outcome.fit[[1L]], newdata = newdata)
   if ("DWSurv" %in% class(object)) pred <- exp(pred)
   pred
@@ -203,6 +225,41 @@ coef.DTRreg <- function(object,...) {
   K <- object$K
   psi <- object$psi
   names(psi) <- paste0("stage_", 1L:K)
+  psi
+}
+
+#' @noRd
+#' @keywords internal
+.ciStep.se <- function(psij, level, covmatj) {
+  psi <- matrix(NA, nrow = length(psij), ncol = 2L)
+  rownames(psi) <- names(psij)
+  colnames(psi) <- c(paste(100.0 * {{1.0 - level} / 2.0},"%"), 
+                          paste(100.0 * {{1.0 + level} / 2.0},"%"))
+  
+  psi[, 1L] <- psij + 
+    stats::qnorm({1.0 - level} / 2.0) * sqrt(diag(covmatj))
+    
+  psi[, 2L] <- psij + 
+    stats::qnorm({1.0 + level} / 2.0) * sqrt(diag(covmatj))
+
+  psi    
+}
+
+#' @noRd
+#' @keywords internal
+.ciStep.percentile <- function(psij, level, var.estim, psi.bootj) {
+  if (var.estim != "bootstrap") {
+    stop("Percentile confidence intervals only available with bootstrap.",
+         call. = FALSE)
+  }
+  
+  psi <- matrix(NA, nrow = length(psij), ncol = 2L)
+  rownames(psi) <- names(psij)
+  colnames(psi) <- c(paste(100.0 * {{1.0 - level} / 2.0},"%"), 
+                     paste(100.0 * {{1.0 + level} / 2.0},"%"))
+  
+  psi[, 1L] <- apply(psi.bootj, 2L, stats::quantile, probs = {1.0 - level} / 2.0)
+  psi[, 2L] <- apply(psi.bootj, 2L, stats::quantile, probs = {1.0 + level} / 2.0)
   psi
 }
 
@@ -232,13 +289,13 @@ confint.DTRreg <- function(object, parm = NULL, level = 0.95,
   type <- match.arg(type)
   
   if (object$setup$var.estim == "none") {
-    cat("confint() only available when DTRreg called with a variance",
-        "estimation option\n")
+    message("confint() only available when DTRreg called with a variance",
+            "estimation option")
     return(invisible(NULL))
   }
   
   if (any(object$covmat[[1]] == "aborted")) {
-    cat("variance estimation aborted; unable to obtain confidence intervals\n")
+    message("variance estimation aborted; unable to obtain confidence intervals")
     return(invisible(NULL))
   }
     
@@ -247,27 +304,10 @@ confint.DTRreg <- function(object, parm = NULL, level = 0.95,
   names(psi) <- paste0("stage_", 1L:K)
   
   for (j in 1L:K) {
-    psi[[j]] <- matrix(NA, nrow = length(object$psi[[j]]), ncol = 2L)
-    rownames(psi[[j]]) <- names(object$psi[[j]])
-    colnames(psi[[j]]) <- c(paste(100.0 * {{1.0 - level} / 2.0},"%"), 
-                            paste(100.0 * {{1.0 + level} / 2.0},"%"))
-      
-    if (type == "se") {
-      psi[[j]][, 1L] <- object$psi[[j]] + 
-        stats::qnorm({1.0 - level} / 2.0) * sqrt(diag(object$covmat[[j]]))
-        
-      psi[[j]][, 2L] <- object$psi[[j]] + 
-        stats::qnorm({1.0 + level} / 2.0) * sqrt(diag(object$covmat[[j]]))
-        
-    } else if (type == "percentile") {
-      if (object$setup$var.estim != "bootstrap") {
-        stop("Percentile confidence intervals only available with bootstrap.",
-             call. = FALSE)
-      }
-      psi[[j]][, 1L] <- apply(object$psi.boot[[j]], 2L, stats::quantile, 
-                              probs = {1.0 - level} / 2.0)
-      psi[[j]][, 2L] <- apply(object$psi.boot[[j]], 2L, stats::quantile, 
-                              probs = {1.0 + level} / 2.0)
+    psi[[j]] <- if (type == "se") {
+      .ciStep.se(object$psi[[j]], level, object$covmat[[j]])
+    } else {
+      .ciStep.percentile(object$psi[[j]], level, object$setup$var.estim, object$psi.boot[[j]])
     }
   }
   psi
@@ -297,111 +337,222 @@ confint.DTRreg <- function(object, parm = NULL, level = 0.95,
 #' 
 #' @param x A model object generated by the functions DTRreg and DWSurv.
 #' @param ... Space for additional arguments (not currently used)
-#' @references
-#' Chakraborty, B., Moodie, E. E. M. (2013) \emph{Statistical Methods for 
-#'   Dynamic Treatment Regimes}. New York: Springer.
-#'   
-#' Rich B., Moodie E. E. M., Stephens D. A., Platt R. W. (2010) Model 
-#'   Checking with Residuals for G-estimation of Optimal Dynamic Treatment 
-#'   Regimes. \emph{International Journal of Biostatistics} \bold{6}(2), 
-#'   Article 12.
-#'   
-#' Robins, J. M. (2004) \emph{Optimal structural nested models for optimal 
-#'   sequential decisions}. In Proceedings of the Second Seattle Symposium on 
-#'   Biostatistics, D. Y. Lin and P. J. Heagerty (eds), 189-326. 
-#'   New York: Springer.
-#'   
-#' Wallace, M. P., Moodie, E. M. (2015) Doubly-Robust Dynamic Treatment 
-#'   Regimen Estimation Via Weighted Least Squares. \emph{Biometrics} 
-#'   \bold{71}(3), 636-644 (doi:10.1111/biom.12306.)
-#' @author Michael Wallace
-#' @template data_setup
-#' @template model_definitions
-#' @template g_est
+#' @returns Invisibly, a list of gg objects.
+#' 
 #' @examples
+#' # example single run of a 2-stage g-estimation analysis
+#' 
+#' set.seed(1)
+#' 
+#' # expit function
+#' expit <- function(x) { 1.0 / (1.0 + exp(-x)) }
+#' 
+#' # sample size
+#' n <- 10000
+#' 
+#' # variables (X = patient information, A = treatment)
+#' X1 <- rnorm(n)
+#' A1 <- rbinom(n, 1, expit(X1))
+#' X2 <- rnorm(n)
+#' A2 <- rbinom(n, 1, expit(X2))
+#' 
+#' # blip functions
+#' gamma1 <- A1 * (1 + X1)
+#' gamma2 <- A2 * (1 + X2)
+#' 
+#' # observed outcome: treatment-free outcome plus blip functions
+#' Y <- exp(X1) + exp(X2) + gamma1 + gamma2 + rnorm(n)
 #'  
+#' # models to be passed to DTRreg
+#' # blip model
+#' blip.mod <- list(~ X1, ~ X2)
+#' # treatment model (correctly specified)
+#' treat.mod <- list(A1 ~ X1, A2 ~ 1)
+#' # treatment-free model (incorrectly specified)
+#' tf.mod <- list(~ X1, ~ X2)
+#' 
+#' # perform G-estimation
+#' mod1 <- DTRreg(twoStageCont$Y, blip.mod, treat.mod, tf.mod, 
+#'               data = twoStageCont, method = "gest")
+#'               
 #' # model diagnostics: note treatment-free model is mis-specified
 #' plot(mod1)
 #' 
-#' @import graphics
-#' @importFrom stats lowess
-#' @concept dynamic treatment regimens
-#' @concept adaptive treatment strategies
-#' @concept personalized medicine
-#' @concept g-estimation
-#' @concept dynamic weighted ordinary least squares
 #' @export
 plot.DTRreg <- function(x, ...) {
+  # call the autoplot method to get the list of ggplots
+  plots <- ggplot2::autoplot(x, ...)
   
-  for (j in 1L:x$K) {
-    cases <- x$analysis$last.stage >= j
-      
-    advance <- readline("Hit <Return> to see next plot:")
-    cat("Stage", j, "outcome model:\n")
-    
-    obsK <- x$analysis$Y[[j]]
-    fitK <- x$analysis$outcome.fit[[j]]$fitted.value
-      
-    plot(fitK, obsK - fitK,
-         xlab = "Fitted values",
-         ylab = "Residuals",
-         main = paste("Stage", j, "Residuals vs Fitted"))
-    abline(h = 0.0, lty = 2L, col = 4L)
-    points(stats::lowess(fitK, obsK - fitK), type = "l", col = 2L, lwd = 2L)
-    
-    blip <- x$setup$models[[j]]$blip
-    blip_mm <- stats::model.matrix(blip, x$training_data$data[cases, , drop = FALSE])
-    if (attr(stats::terms(blip), "intercept") == 1L) {
-      blip_mm <- blip_mm[, -1L, drop = FALSE]
+  # handle the interactive display
+  if (interactive() && length(plots) > 1) {
+    old_ask <- grDevices::devAskNewPage(TRUE)
+    on.exit(grDevices::devAskNewPage(old_ask), add = TRUE)
+  }
+  
+  # print each plot to the active graphics device
+  for (p in plots) {
+    # if it's a ggplot, print it; if it's a base plot caught in the list, plot it.
+    if (inherits(p, "ggplot") || inherits(p, "grob")) {
+      print(p)
+    } else {
+      plot(p)
     }
+  }
+  
+  # Return the list invisibly
+  invisible(plots)
+}
+
+
+#' Diagnostic Plots for DTR Estimation via autoplot()
+#' 
+#' Diagnostic plots for assessment of treatment, treatment-free, and blip models 
+#'   following DTR estimation using DTRreg or DWSurv.
+#'   
+#' @param object A model object generated by the functions DTRreg and DWSurv.
+#' @param ... Space for additional arguments (not currently used)
+#' @returns A named list of gg objects.
+#' 
+#' @examples
+#' # example single run of a 2-stage g-estimation analysis
+#' 
+#' set.seed(1)
+#' 
+#' # expit function
+#' expit <- function(x) { 1.0 / (1.0 + exp(-x)) }
+#' 
+#' # sample size
+#' n <- 10000
+#' 
+#' # variables (X = patient information, A = treatment)
+#' X1 <- rnorm(n)
+#' A1 <- rbinom(n, 1, expit(X1))
+#' X2 <- rnorm(n)
+#' A2 <- rbinom(n, 1, expit(X2))
+#' 
+#' # blip functions
+#' gamma1 <- A1 * (1 + X1)
+#' gamma2 <- A2 * (1 + X2)
+#' 
+#' # observed outcome: treatment-free outcome plus blip functions
+#' Y <- exp(X1) + exp(X2) + gamma1 + gamma2 + rnorm(n)
+#'  
+#' # models to be passed to DTRreg
+#' # blip model
+#' blip.mod <- list(~ X1, ~ X2)
+#' # treatment model (correctly specified)
+#' treat.mod <- list(A1 ~ X1, A2 ~ 1)
+#' # treatment-free model (incorrectly specified)
+#' tf.mod <- list(~ X1, ~ X2)
+#' 
+#' # perform G-estimation
+#' mod1 <- DTRreg(twoStageCont$Y, blip.mod, treat.mod, tf.mod, 
+#'               data = twoStageCont, method = "gest")
+#'               
+#' # model diagnostics: note treatment-free model is mis-specified
+#' gg_list <- ggplot2::autoplot(mod1)
+#' 
+#' @import ggplot2
+#' @export
+autoplot.DTRreg <- function(object, ...) {
+  plot_list <- list()
+  
+  # residual Analysis
+  for (j in seq_len(object$K)) {
+    cases <- object$analysis$last.stage >= j
+    obsK   <- object$analysis$fitted.values[[j]]
+    fitK <- object$analysis$outcome.fit[[j]]$fitted.values
+    resids <- object$analysis$residuals[[j]]
+    
+    # helper to generate the standardized diagnostic plot
+    make_resid_plot <- function(x_val, y_val, x_label, title) {
+      df <- data.frame(x = x_val, y = y_val)
+      ggplot(df, aes(.data[["x"]], .data[["y"]])) +
+        geom_point(alpha = 0.5, shape = 1) +
+        geom_hline(yintercept = 0, linetype = "dashed", color = "blue") +
+        geom_smooth(method = "loess", color = "red", se = FALSE, linewidth = 0.8) +
+        labs(title = title, x = x_label, y = "Residuals") +
+        theme_minimal()
+    }
+    
+    # plot: Residuals vs Fitted
+    name_fitted <- paste0("Stage", j, "_Fitted")
+    plot_list[[name_fitted]] <- make_resid_plot(
+      fitK, resids, "Fitted values", paste("Stage", j, "Residuals vs Fitted")
+    )
+    
+    # plots: Blip Covariates
+    blip <- object$setup$models[[j]]$blip
+    blip_mm <- model.matrix(blip, object$analysis$blip.data[[j]])
+    if (attr(terms(blip), "intercept") == 1L) blip_mm <- blip_mm[, -1L, drop = FALSE]
     
     if (ncol(blip_mm) > 0L) {
-      for (i in 1L:ncol(blip_mm)) {
-        
-        advance <- readline("Hit <Return> to see next plot:")
-        cat("Stage", j, "blip function variable", colnames(blip_mm)[i], "\n")
-        
-        plot(blip_mm[, i], 
-             obsK - fitK,
-             xlab = colnames(blip_mm)[i],
-             ylab = "Residuals",
-             main = paste("Stage", j, "Residuals vs", colnames(blip_mm)[i]))
-        abline(h = 0.0, lty = 2L, col = 4L)
-        points(stats::lowess(blip_mm[, i], obsK - fitK), 
-               type = "l", col = 2L, lwd = 2L)
+      for (i in seq_len(ncol(blip_mm))) {
+        col_name <- colnames(blip_mm)[i]
+        name_cov <- paste0("Stage", j, "_", col_name)
+        plot_list[[name_cov]] <- make_resid_plot(
+          blip_mm[, i], resids, col_name, paste("Stage", j, "Residuals vs", col_name)
+        )
       }
-    }
-  }
-
-  for (j in 1:x$K) {
-    if (!is.logical(x$analysis$tx.mod.fitted[[j]])) {
-      cat("Stage", j, "treatment model:\n")
-      plot(x$analysis$tx.mod.fitted[[j]], 
-           sub.caption = paste("Stage", j, "treatment"))
-      advance <- readline("Hit <Return> to see next plot:")
     }
   }
   
-  if ("DWSurv" %in% class(x)) {
-
-    for (j in 1L:x$K) {
-      if (!is.logical(x$analysis$cens.mod.fitted[[j]])) {
-        cat("Stage", j, "censoring model:\n")
-        
-        plot(x$analysis$cens.mod.fitted[[j]],
-             sub.caption = paste("Stage", j, "censoring"))
-        advance <- readline("Hit <Return> to see next plot:")
+  # Sub-Model Diagnostics (Treatment, Censoring, etc.)
+  # use ggplotify or ggfortify if possible to convert them.
+  add_submodel_plots <- function(plot_list, mod, prefix) {
+    if (is.logical(mod)) return(plot_list)
+    
+    tryCatch({
+      if (inherits(mod, c("glm", "lm"))) {
+        # handle directly - don't rely on ggfortify being loaded
+        df  <- data.frame(fitted   = fitted(mod),
+                          residuals = stats::residuals(mod, type = "deviance"))
+        p   <- ggplot2::ggplot(df, ggplot2::aes(.data[["fitted"]], .data[["residuals"]])) +
+          ggplot2::geom_point(alpha = 0.5, shape = 1) +
+          ggplot2::geom_hline(yintercept = 0, linetype = "dashed",
+                              color = "blue") +
+          ggplot2::geom_smooth(method = "loess", color = "red",
+                               se = FALSE, linewidth = 0.8) +
+          ggplot2::labs(title    = paste(prefix, "Residuals vs Fitted"),
+                        x = "Fitted values", y = "Deviance Residuals") +
+          ggplot2::theme_minimal()
+        plot_list[[prefix]] <- p
+      } else {
+        p <- ggplot2::autoplot(mod)
+        plot_list[[prefix]] <- p
       }
-    }
-  } else {
-    for (j in 1L:x$K) {
-      if (!is.logical(x$analysis$cc.mod.fitted[[j]])) {
-        cat("Stage", j, "complete cases model\n")
-      
-        plot(x$analysis$cc.mod.fitted[[j]],
-             sub.caption = paste("Stage", j, "complete cases"))
-        advance <- readline("Hit <Return> to see next plot:")
+    }, error = function(e1) {
+      if (requireNamespace("ggplotify", quietly = TRUE)) {
+        tryCatch({
+          plot_list[[prefix]] <<- ggplotify::as.ggplot(function() {
+            old_ask <- graphics::par(ask = FALSE)
+            on.exit(graphics::par(old_ask))
+            plot(mod)
+          })
+        }, error = function(e2) {
+          # silently skip
+        })
       }
+    })
+    
+    plot_list
+  }  
+  for (j in seq_len(object$K)) {
+    plot_list <- add_submodel_plots(plot_list,
+                                    mod = object$analysis$tx.mod.fitted[[j]], 
+                                    paste0("Stage", j, "_Treatment"))
+    
+    if ("DWSurv" %in% class(object)) {
+      plot_list <- add_submodel_plots(plot_list,
+                                      object$analysis$cens.mod.fitted[[j]], 
+                                      paste0("Stage", j, "_Censoring"))
+    } else {
+      plot_list <- add_submodel_plots(plot_list,
+                                      object$analysis$cc.mod.fitted[[j]], 
+                                      paste0("Stage", j, "_CompleteCases"))
     }
   }
+  
+  plot_list
 }
+

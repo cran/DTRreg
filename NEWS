@@ -1,7 +1,10 @@
-*** version 2.3
+*** version 2.4
 
-- Addition of author@R field to DESCRIPTION
-- Addition of R >= 4.1.0 to DESCRIPTION
+- Separation of variables into beta/psi fix for continuos quadratic. 
+- Added data prep step to each treatment class to avoid internal naming
+  convention leaking into other functions
+- Added test suite - modularized functions to faciliate coverage
+- deprecated 'abs' weight and replaced as 'overlap'
 
 *** version 2.2
 

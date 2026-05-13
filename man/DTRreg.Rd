@@ -17,7 +17,7 @@ DTRreg(
   interactive = FALSE,
   treat.type = c("bin", "multi", "cont"),
   treat.fam = gaussian(link = "identity"),
-  weight = c("abs", "ipw", "cipw", "qpom", "wo", "none", "manual"),
+  weight = c("overlap", "ipw", "cipw", "qpom", "none", "manual"),
   n.bins = 3L,
   treat.range = NULL,
   treat.wgt.man = NULL,
@@ -52,7 +52,8 @@ variable. If treatment is binary \code{\link[stats]{glm}(family = binomial)}
 will be 
 used to obtain parameter estimates; if treatment is multi-nomial, 
 \code{\link[nnet]{multinom}()} will be used to obtain parameter estimates; and if 
-treatment is continuous, \code{\link[stats]{lm}()} will be used.}
+treatment is continuous, \code{\link[stats]{glm}()} with the family and
+link specified by \code{treat.fam} will be used to obtain parameter estimates.}
 
 \item{tf.mod}{A list of formula objects specifying covariates of the
 treatment-free model for each stage in order. No dependent variable should 
@@ -80,13 +81,14 @@ If character object, must be one of \{"gaussian", "Gamma"\}, for which
 \code{\link[stats]{Gamma}(link = "log")} 
 will be used,
 respectively. Input is ignored for \code{treat.type = "bin"} and 
-\code{treat.type = "multi"}.}
+\code{treat.type = "multi"}. If \code{NULL} and \code{treat.type = "cont"},
+defaults to \code{gaussian(link = "identity")}.}
 
 \item{weight}{The form of the treatment weight. See details.}
 
 \item{n.bins}{An integer object. The number of bins (levels) to be used for 
 categorizing continuous doses. This input is required only when
-\code{treat.type = "cont"} and \code{weight = "wo"} or \code{weight = "qpom"}.}
+\code{treat.type = "cont"} and \code{weight = "overlap"} or \code{weight = "qpom"}.}
 
 \item{treat.range}{For continuous treatments. Specify the maximum/minimum 
 value that treatments can be take. If unspecified then the minimum/maximum 
@@ -168,7 +170,7 @@ An object of class \code{DTRreg}, a list including elements
       \describe{
         \item{models: }{A list of the models used for the analysis.}
         \item{method: }{The parameter estimation method.}
-        \item{var.estim: }{The variance esetimation method.}
+        \item{var.estim: }{The variance estimation method.}
         \item{cc.modeled: }{If TRUE, missing data was modeled. If FALSE, cases
            with missing data were removed from the analysis.}
         \item{tx.weight: }{The treatment weighting used for the analysis.}
@@ -300,18 +302,26 @@ Dynamic treatment regimen estimation and inference via G-estimation and
       continuous doses or multinomial treatments; probabilities are 
       calculated using a proportional odds model.
       This weight is appropriate only for continuous and multinomial treatments.
-    \item "wo": overlap weights for the categorized continuous doses 
-      or multinomial treatments (Li and Li, 2019).
-      This weight is appropriate only for continuous treatments.
-    \item "abs": Absolute difference \eqn{|A - E[A|...]|}{|A - E[A|...]|}. 
-      appropriate only for binary treatments.
+    \item "overlap": overlap weights for the categorized continuous doses 
+      or multinomial treatments (Li and Li, 2019) and the absolute difference 
+      \eqn{|A - E[A|...]|}{|A - E[A|...]|} for binary treatments.
     \item "manual": User provides weights through input \code{treat.wgt.man}.
       Manual treatments are only used in dwols.
    }
+   
+ Note that the overlap weights were initially termed "absolute value weights" 
+   in Wallace and Moodie's (2015, Biometrics, Doubly-robust dynamic 
+   treatment regimen estimation via weighted least squares. 71:636-644) and 
+   abbreviated \code{abs} in earlier versions of this package. In addition, the 
+   overlap weights for continuous or multinomial treatments were termed 
+   \code{wo} in previous versions, which corresponds to their labeling in 
+   Schulz & Moodie (2021, Journal of the American Statistical Association, 
+   Doubly robust estimation of optimal dosing strategies 116:256-268.).
+   Since version 2.4, these have been united under \code{overlap}, and
+   \code{abs} and \code{wo} have been deprecated.
 }
 \examples{
 data(twoStageCont)
-
 # models to be passed to DTRreg
 # blip model
 blip.mod <- list(~ X1, ~ X2)
@@ -322,7 +332,8 @@ tf.mod <- list(~ X1, ~ X2)
 
 # perform G-estimation
 mod1 <- DTRreg(twoStageCont$Y, blip.mod, treat.mod, tf.mod, 
-               data = twoStageCont, method = "gest")
+              data = twoStageCont, method = "gest")
+              
 mod1
 }
 \references{
@@ -345,8 +356,18 @@ Chakraborty, B., Moodie, E. E. M. (2013) \emph{Statistical Methods for
   
   Efron, B., and Tibshirani, R. (1986)
   Bootstrap Methods for Standard Errors, Confidence Intervals, and Other 
-  Measures of Statistical Accuracy \emph{Source: Statistical Science} \bold{1}
+  Measures of Statistical Accuracy \emph{Source: Statistical Science} \bold{1},
   54-75.
+
+  Schulz, J. and Moodie, E.E.M. (2021) 
+  Doubly robust estimation of optimal dosing strategies. 
+  \emph{Journal of the American Statistical Association}, \bold{116}, 
+  256–268.
+  
+  Li, F. and Li, F. (2019) 
+  Propensity score weighting for causal inference with multiple treatments. 
+  \emph{The Annals of Applied Statistics}, \bold{13}(4), 
+  2389–2415.
 }
 \author{
 Michael Wallace

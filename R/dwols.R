@@ -38,22 +38,23 @@
     "`tx.var` must be a character" = !missing(tx.var) && is.character(tx.var)
   )
   
+  y_name <- "Y"
+  while (y_name %in% colnames(data)) 
+    y_name <- paste("Y", sample(.Machine$integer.max, size = 1L), sep = "_")
+
   # update the outcome model to include the internally defined outcome
-  full_model <- stats::update.formula(cts.obj$full.model, Y_internal_Y ~ .)
-  
+  full_model <- stats::reformulate(attr(stats::terms(cts.obj$full.model), "term.labels"),
+                                   response = y_name)
+
   # add internally defined outcome and stage treatment to analysis data.frame
-  data[["Y_internal_Y"]] <- Y
+  data[[y_name]] <- Y
   data[[tx.var]] <- A
 
   # if a quadratic blip function, update the internal
   # I(a^2) variable with the square of the current treatment variable value
-  if ("ContQuadraticBlip" %in% class(cts.obj)) {
-    data[["l__txvar2__l"]] <- A^2
-  }
-  l___wgts___l <- wgts
-
-  fit <- tryCatch(stats::lm(full_model, cbind(data, "l___wgts___l" = wgts), 
-                            weights = l___wgts___l),
+  data <- cts.obj$prep(data, A)
+  
+  fit <- tryCatch(stats::lm(full_model, data, weights = wgts),
                   error = function(e) {
                     stop("unable to complete DWOLS\n\t",
                          e$message, call. = FALSE)

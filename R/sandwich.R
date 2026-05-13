@@ -48,9 +48,8 @@
   # n x n_theta
   # (Y - Yhat) wgt (A-Ahat) H_psi
   data[, tx.var] <- A
-  if ("ContQuadraticBlip" %in% class(cts.obj)) {
-    data[, "l__txvar2__l"] <- A^2
-  }
+  data <- cts.obj$prep(data, A)
+  
   U <- drop(Y - predict(outcome.fit, data)) * HW
 
   # n_theta x n_theta

@@ -4,6 +4,82 @@
 #' 
 #' @include dtrProcedure.R utils.R
 #' @keywords internal
+.resampleObj <- function(obj, boot_sample, isSurvival) {
+  bobj <- obj
+  if (!isSurvival) bobj$outcome <- obj$outcome[boot_sample]
+  bobj$data <- obj$data[boot_sample, , drop = FALSE]
+  bobj$var.estim <- "none"
+  bobj$boot.controls <- list()
+  if (is.list(obj$tx.wgt.man)) {
+    bobj$tx.wgt.man <- lapply(obj$tx.wgt.man, "[", boot_sample)
+  }
+  bobj
+}
+
+#' @noRd
+#' @keywords internal
+.trunc <- function(x,p) {
+  l <- quantile(x, p)
+  u <- quantile(x, 1.0 - p)
+  x[x < l] <- l
+  x[x > u] <- u
+  x
+}
+
+#' @noRd
+#' @keywords internal
+.stackPsiBoot <- function(psi_boot) {
+  do.call(function(...) mapply(rbind, ..., SIMPLIFY = FALSE), 
+          psi_boot)
+}
+
+.truncPsiBoot <- function(truncate, psi_boot) {
+  if (truncate > 0) {
+    lapply(psi_boot, FUN = function(x) {
+      apply(x, 2L, .trunc, truncate)
+    })
+  } else {
+    psi_boot
+  }
+}
+
+#' @noRd
+#' @keywords internal
+.computeCovmat <- function(psi_boot) {
+  lapply(psi_boot, var)
+}
+
+.reportProgress <- function(ptm, i, B, cont, verbose, interrupt) {
+  if (!verbose || i < 10L) return(cont)
+  
+  eta <- {B - i} * {{proc.time() - ptm}[3L] / i}
+  
+  if (i > 50L && eta > 600 && cont == "y" && interrupt) {
+    last_val <- attr(cont, "last")
+    response <- readline(paste("Estimated run time", round(eta / 60L),
+                               "minutes. Continue? y/n: "))
+    if (response %in% c("n", "no", "N", "NO")) return("abort")
+    cont <- "asked" 
+    attr(cont, "last") <- last_val
+  }
+  
+  if (i == 10L) attr(cont, "last") <- eta + 31.0
+  last <- attr(cont, "last") %||% Inf
+  
+  if (eta > 30.0 && eta < {last - 30.0}) {
+    message("Approximately ", round(eta), " seconds remaining.")
+    attr(cont, "last") <- eta
+  }
+  
+  cont
+}
+
+#' @noRd
+#' @param obj A list object. The analysis results and settings.
+#' @param isSurvival A logical. If TRUE, survival end point.
+#' 
+#' @include dtrProcedure.R utils.R
+#' @keywords internal
 .bootstrap <- function(obj, isSurvival) {
   
   n_cases <- nrow(obj$data)
@@ -18,67 +94,82 @@
   psi_boot <- list()
   
   # continue indicator
+  last <- Inf
   cont <- "y"
   
   bobj <- obj
 
   for (i in seq_len(obj$boot.controls$B)) {
     boot_sample <- sample(seq_len(n_cases), obj$boot.controls$M, replace = TRUE)
-    if (!isSurvival) bobj$outcome <- obj$outcome[boot_sample]
-    bobj$data <- obj$data[boot_sample, , drop = FALSE]
-    bobj$var.estim <- "none"
-    bobj$boot.controls <- list()
-    
-    if (is.list(obj$tx.wgt.man)) {
-      bobj$tx.wgt.man <- lapply(obj$tx.wgt.man, "[", boot_sample)
-    }
-    
-    psi_boot[[i]] <- .dtrProcedure(obj = bobj, quiet = TRUE, isSurvival)$psi
+    bobj <- .resampleObj(obj, boot_sample, isSurvival)
 
-    # if verbose, display ETA and give option to abort
-    if (obj$boot.controls$verbose & i >= 10) {
-      # only display if projected > 30s, then only display every 30s
-      eta <- {obj$boot.controls$B - i}*{{proc.time() - ptm}[3L] / i}
-      # if very long (> 10 mins) give option to abort but if ignored continue
-      if (i > 50 & eta > 600 & cont != "y" & obj$boot.controls$interrupt) {
-        cont <- readline(paste("Estimated run time", round(eta / 60),
-                               "minutes. Continue? y/n: "))
-        if (cont %in% c("n", "no", "N", "NO")) {
-          message("bootstrap aborted")
-          return(list("covmat" = "aborted", "psi.boot" = "aborted"))
-        } else {
-          cont <- "y"
-        }
-      }
-      if (i == 10L) last <- eta + 31.0
-      if (eta > 30.0 & eta < {last - 30.0}) {
-        message("Approximately ", round(eta), " seconds remaining.")
-        last <- eta
-      }
+    result <- .dtrProcedure(obj = bobj, quiet = TRUE, isSurvival)
+    psi_boot[[i]] <- lapply(result$stages, "[[", "psi")
+
+    cont <- .reportProgress(ptm, i, obj$boot.controls$B, cont,
+                            obj$boot.controls$verbose, obj$boot.controls$interrupt)
+    if (identical(cont, "abort")) {
+      message("bootstrap aborted")
+      return(list("covmat" = "aborted", "psi.boot" = "aborted"))
     }
   }
   
-  psi_boot <- do.call(function(...) mapply(rbind, ..., SIMPLIFY = FALSE), 
-                      psi_boot)
-
+  psi_boot <- .stackPsiBoot(psi_boot)
+  
+  if (any(sapply(psi_boot, function(x) any(is.na(x))))) {
+    stop("psi contains NA values", call. = FALSE)
+  }
+  
   # truncation function for truncate option
-  .trunc <- function(x,p) {
-    l <- quantile(x, p)
-    u <- quantile(x, 1.0 - p)
-    x[x < l] <- l
-    x[x > u] <- u
-    x
-  }
-  
   # if requested, truncate estimates based on specified percentile
-  if (obj$boot.controls$truncate > 0) {
-    psi_boot <- lapply(psi_boot,
-                       FUN = function(x) {
-                               apply(x, 2L, .trunc, obj$boot.controls$truncate)
-                       })
-  }
-  covmat <- lapply(psi_boot, var)
+  psi_boot <- .truncPsiBoot(obj$boot.controls$truncate, psi_boot)
+  
+  covmat <- .computeCovmat(psi_boot)
+  
   list("covmat" = covmat, "psi.boot" = psi_boot)
+}
+
+#' @noRd
+#' @keywords internal
+.computeHoldY <- function(step.obj, data, isSurvival) {
+  do.call(ifelse(isSurvival, exp, c),
+          list(predict(step.obj$outcome.fit, data)))
+}
+
+#' @noRd
+#' @keywords internal
+.buildSingleStageObj <- function(obj, step.obj, tx.var, status.var, time.var, 
+                                 data, tx.wgt.man, isSurvival) {
+  single_stage_obj <- obj
+  single_stage_obj$K <- 1L
+  single_stage_obj$models <- list(step.obj$models)
+  single_stage_obj$var.estim <- "none"
+  single_stage_obj$dependent.vars$treat <- tx.var
+  if (isSurvival) {
+    single_stage_obj$dependent.vars$status <- status.var
+    single_stage_obj$dependent.vars$time <- time.var
+  }
+  single_stage_obj$data <- data
+  if (is.null(tx.wgt.man)) {
+    single_stage_obj["tx.wgt.man"] <- list(NULL)
+  } else {
+    single_stage_obj$tx.wgt.man <- tx.wgt.man
+  }
+  single_stage_obj$boot.controls <- list()
+  single_stage_obj
+}
+
+#' @noRd
+#' @keywords internal
+.sampleResiduals <- function(type, reshist, mean.res, sd.res, n, n_sample) {
+  if (type == "empirical") {
+    bins <- with(reshist,
+                  sample(length(mids), n_sample, prob = density, replace = TRUE))
+    newres <- stats::runif(n, reshist$breaks[bins], reshist$breaks[bins + 1])
+  } else if (type == "normal") {
+    newres <- stats::rnorm(n, mean = mean.res, sd = sd.res)
+  }
+  newres
 }
 
 #' Non-parametric Bootstrap Algorithm for Survival Data
@@ -112,12 +203,9 @@
   # Ensure that data contains the observed treatment
   data[[step.obj$tx.var]] <- step.obj$A
 
-  if (step.obj$cts == "cts.q") {
-    data[["l__txvar2__l"]] <- step.obj$A^2
-  }
+  data <- step.obj$cts.obj$prep(data, step.obj$A)
   
-  hold_Y <- do.call(ifelse(isSurvival, exp, c),
-                    list(predict(step.obj$outcome.fit, data)))
+  hold_Y <- .computeHoldY(step.obj, data, isSurvival)
   
   # mean and sd of residuals; used to sample N(mean, sd) if bootstrap option is 
   # "normal"
@@ -128,39 +216,19 @@
   reshist <- graphics::hist(residuals, plot = FALSE)
   
   # create single step version of main object
-  single_stage_obj <- obj
-  single_stage_obj$K <- 1L
-  single_stage_obj$models <- list(step.obj$models)
-  single_stage_obj$var.estim <- "none"
-  single_stage_obj$dependent.vars$treat <- tx.var
-  if (isSurvival) {
-    single_stage_obj$dependent.vars$status <- status.var
-    single_stage_obj$dependent.vars$time <- time.var
-  }
-  single_stage_obj$data <- data
-  if (is.null(tx.wgt.man)) {
-    single_stage_obj["tx.wgt.man"] <- list(NULL)
-  } else {
-    single_stage_obj$tx.wgt.man <- tx.wgt.man
-  }
-  single_stage_obj$boot.controls <- list()
+  single_stage_obj <- .buildSingleStageObj(obj, step.obj, tx.var, status.var,
+                                           time.var, data, tx.wgt.man, isSurvival)
   
   for (k in seq_len(obj$boot.controls$B)) {
     # generate new status variable based on fitted probabilities
     if (isSurvival) {
       single_stage_obj$data[, status.var] <- stats::rbinom(step.obj$n, 1, d.hat)
     }
-      
-    if (obj$boot.controls$type == "empirical") {
-      bins <- with(reshist, 
-                   sample(length(mids), 
-                          sum(single_stage_obj$data[, status.var]), 
-                          prob = density, replace = TRUE))
-      newres <- stats::runif(step.obj$n, 
-                             reshist$breaks[bins], reshist$breaks[bins + 1])
-    } else if (obj$boot.controls$type == "normal") {
-      newres <- stats::rnorm(step.obj$n, mean = mean.res, sd = sd.res)
-    }
+    
+    n_sample <- if (isSurvival) sum(single_stage_obj$data[, status.var]) else step.obj$n
+    
+    newres <- .sampleResiduals(obj$boot.controls$type, reshist,
+                               mean.res, sd.res, step.obj$n, n_sample)
     
     if (isSurvival) {
       single_stage_obj$data[, time.var] <- hold_Y*exp(newres)
@@ -168,7 +236,7 @@
       single_stage_obj$outcome <- hold_Y + newres
     }
 
-    psi_boot[, k] <- .dtrProcedure(single_stage_obj, quiet = TRUE, isSurvival)$psi[[1L]]
+    psi_boot[, k] <- .dtrProcedure(single_stage_obj, quiet = TRUE, isSurvival)$stages[[1L]]$psi
   }
   
   psi_boot <- t(psi_boot)

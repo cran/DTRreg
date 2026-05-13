@@ -15,7 +15,7 @@ DWSurv(
   interactive = FALSE,
   treat.type = c("bin", "multi", "cont"),
   treat.fam = gaussian(link = "identity"),
-  weight = c("abs", "ipw", "cipw", "qpom", "wo", "none", "manual", "manual.with.censor"),
+  weight = c("overlap", "ipw", "cipw", "qpom", "none", "manual", "manual.with.censor"),
   n.bins = 3L,
   treat.range = NULL,
   treat.wgt.man = NULL,
@@ -44,7 +44,8 @@ variable. If treatment is binary \code{\link[stats]{glm}(family = binomial)}
 will be 
 used to obtain parameter estimates; if treatment is multi-nomial, 
 \code{\link[nnet]{multinom}()} will be used to obtain parameter estimates; and if 
-treatment is continuous, \code{\link[stats]{lm}()} will be used.}
+treatment is continuous, \code{\link[stats]{glm}()} with the family and
+link specified by \code{treat.fam} will be used to obtain parameter estimates.}
 
 \item{tf.mod}{A list of formula objects specifying covariates of the
 treatment-free model for each stage in order. No dependent variable should 
@@ -81,13 +82,14 @@ If character object, must be one of \{"gaussian", "Gamma"\}, for which
 \code{\link[stats]{Gamma}(link = "log")} 
 will be used,
 respectively. Input is ignored for \code{treat.type = "bin"} and 
-\code{treat.type = "multi"}.}
+\code{treat.type = "multi"}. If \code{NULL} and \code{treat.type = "cont"},
+defaults to \code{gaussian(link = "identity")}.}
 
 \item{weight}{The form of the treatment weight. See details.}
 
 \item{n.bins}{An integer object. The number of bins (levels) to be used for 
 categorizing continuous doses. This input is required only when
-\code{treat.type = "cont"} and \code{weight = "wo"} or \code{weight = "qpom"}.}
+\code{treat.type = "cont"} and \code{weight = "overlap"} or \code{weight = "qpom"}.}
 
 \item{treat.range}{For continuous treatments. Specify the maximum/minimum 
 value that treatments can be take. If unspecified then the minimum/maximum 
@@ -159,7 +161,7 @@ An object of class \code{DWSurv}, a list including elements
         \item tx.weight: The treatment weighting used for the analysis.
         \item tx.type: Treatment was binary, multinomial, or continuous.
         \item n.bins: The number of bins (levels) used for categorizing
-          continuous doses when \code{tx.weight = "wo"} or 
+          continuous doses when \code{tx.weight = "overlap"} or 
           \code{tx.weight = "qpom"}.
         \item tx.wgt.man: Any user provided treatment weights.
         \item tx.range: For continuous treatments, the range of allowed
@@ -217,7 +219,7 @@ Dynamic treatment regimen estimation and inference via dynamic weighted
   
 The function \code{DWSurv()} allows estimating an optimal dynamic treatment regime
   from multi-stage trials or observational data when the outcome of interest
-  is survival time subject to right-censoringg. The dynamic weighted survival 
+  is survival time subject to right-censoring. The dynamic weighted survival 
   modeling (DWSurv) algorithm is implemented.  The method focuses on 
   estimating the parameters of the blip: a model of the difference in 
   expected outcome under the observed treatment and some reference treatment 
@@ -260,11 +262,9 @@ Several treatment weight function options have been implemented within the
       continuous doses or multinomial treatments; probabilities are 
       calculated using a proportional odds model.
       This weight is appropriate only for continuous and multinomial treatments.
-    \item "wo": overlap weights for the categorized continuous doses 
-      or multinomial treatments (Li and Li, 2019).
-      This weight is appropriate only for continuous treatments.
-    \item "abs": Absolute difference \eqn{|A - E[A|...]|}{|A - E[A|...]|}. 
-      appropriate only for binary treatments.
+    \item "overlap": overlap weights for the categorized continuous doses 
+      or multinomial treatments (Li and Li, 2019) and the absolute difference 
+      \eqn{|A - E[A|...]|}{|A - E[A|...]|} for binary treatments.
     \item "manual": User provides treatment weights through input 
     \code{treat.wgt.man}.
     \item "manual.with.censor": User provides combined treatment * censoring
@@ -272,6 +272,17 @@ Several treatment weight function options have been implemented within the
       be specified with the event indicator on the right-hand side of the 
       formula (e.g., \code{~ status}).
    }
+   
+ Note that the overlap weights were initially termed "absolute value weights" 
+   in Wallace and Moodie's (2015, Biometrics, Doubly-robust dynamic 
+   treatment regimen estimation via weighted least squares. 71:636-644) and 
+   abbreviated \code{abs} in earlier versions of this package. In addition, the 
+   overlap weights for continuous or multinomial treatments were termed 
+   \code{wo} in previous versions, which corresponds to their labeling in 
+   Schulz & Moodie (2021, Journal of the American Statistical Association, 
+   Doubly robust estimation of optimal dosing strategies 116:256-268.).
+   Since version 2.4, these have been united under \code{overlap}, and
+   \code{abs} and \code{wo} have been deprecated.
 }
 \examples{
 #### example single run of a 2-stage DWSurv analysis

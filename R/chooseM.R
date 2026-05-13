@@ -38,8 +38,15 @@
 #' 
 #' @examples 
 #' data(twoStageCont)
-#' @template model_definitions
 #' @examples
+#' 
+#' # models to be passed to DTRreg
+#' # blip model
+#' blip.mod <- list(~ X1, ~ X2)
+#' # treatment model (correctly specified)
+#' treat.mod <- list(A1 ~ X1, A2 ~ 1)
+#' # treatment-free model (incorrectly specified)
+#' tf.mod <- list(~ X1, ~ X2)
 #' 
 #' # perform dWOLS without calculating confidence intervals
 #' mod1 <- DTRreg(twoStageCont$Y, blip.mod, treat.mod, tf.mod, 
@@ -72,7 +79,7 @@ chooseM <- function(outcome,
                     method = c("gest", "dwols", "qlearn"), 
                     treat.type = c("bin", "multi", "cont"),
                     treat.fam = gaussian(link = "identity"),
-                    weight = c("abs", "ipw", "cipw", "qpom", "wo", "none", "manual"), 
+                    weight = c("overlap", "ipw", "cipw", "qpom", "none", "manual"), 
                     n.bins = 3L, 
                     treat.wgt.man = NULL,
                     treat.range = NULL, 
@@ -80,6 +87,22 @@ chooseM <- function(outcome,
                     missing.mod = NULL,
                     B1 = 500, B2 = 500) {
   
+  # soft deprecation — remap before match.arg validates
+  if (!missing(weight)) {
+    if (identical(weight, "abs")) {
+      warning("'abs' has been renamed 'overlap'. Please update your code. ",
+              "'abs' will be removed in a future version.", call. = FALSE)
+      weight <- "overlap"
+    } else if (identical(weight, "wo")) {
+      warning("'wo' has been renamed 'overlap'. Please update your code. ",
+              "'wo' will be removed in a future version.", call. = FALSE)
+      weight <- "overlap"
+    }
+  }
+  
+  # now validate — "abs" and "wo" are not in this list
+  weight <- match.arg(weight, c("overlap", "ipw", "cipw", "qpom", "none", "manual"))
+
   stopifnot(
     "`outcome`, `blip.mod`, `treat.mod`, and `tf.mod` must be provided" =
       !missing(outcome) && !missing(blip.mod) && !missing(treat.mod) &&
@@ -105,6 +128,8 @@ chooseM <- function(outcome,
                  treat.range = treat.range,
                  var.estim = "bootstrap", 
                  bootstrap.controls = list(M = 0, truncate = 0.0, B = 50))
+  
+  stopifnot("`chooseM` is only appropriate for K = 2" = mod1$K == 2L)
   
   blip.psi.1 <- mod1$psi[[1L]]
   p <- mod1$nonreg[2L]

@@ -123,6 +123,7 @@
   }
   if (ncol(Ahat) == {n_levels - 1L}) {
     Ahat <- cbind(1.0 - rowSums(Ahat), Ahat)
+    colnames(Ahat) <- levs
   } else if (ncol(Ahat) != length(levels(A))) {
     stop("too few A.hat predictions returned; contact developer",
           call. = FALSE)
@@ -164,7 +165,7 @@
 #' @keywords internal
 .Ahat_cont <- function(A, data, tx.var, models, tx.range, tx.family, ...) {
   stopifnot(
-    "`A` must be a vector" = !missing(A) && is.vector(A) && length(A) > 1L,
+    "`A` must be a vector" = !missing(A) && is.vector(A, mode = "numeric") && length(A) > 1L,
     "`data` must be a data.frame" = !missing(data) && is.data.frame(data) &&
       nrow(data) == length(A),
     "`tx.var` must be a character" = !missing(tx.var) && is.character(tx.var),
@@ -254,8 +255,8 @@
     "`tx.var` must be a character object" = !missing(tx.var) &&
       is.character(tx.var) && is.vector(tx.var) && length(tx.var) == 1L,
     "`tx.range` must be a numeric object or NULL" = !missing(tx.range) &&
-      any({is.null(tx.range) | is.na(tx.range)}) ||
-      (is.numeric(tx.range) && is.vector(tx.range) && length(tx.range) == 2L),
+      {any({is.null(tx.range) | is.na(tx.range)}) ||
+      {is.numeric(tx.range) && is.vector(tx.range) && length(tx.range) == 2L}},
     "`tx.type` must be a character" = !missing(tx.type) && is.character(tx.type) &&
       tx.type %in% c("bin", "multi", "cont")  )
   
